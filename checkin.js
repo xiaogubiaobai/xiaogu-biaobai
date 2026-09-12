@@ -59,7 +59,7 @@ var 配置 = {
  *    我为此白改了好几轮,还有一次跑着旧脚本把当天 7 个角色的表白机会全用光了。
  *    现在启动日志第一行就报这个戳,跟 build.py 打印的对一下就知道装对没有。
  */
-var 构建标记 = "远程 2026.09.12.9";
+var 构建标记 = "远程 2026.09.12.10";
 
 var 腾讯包 = "com.tencent.qqlive";
 var 角色页Activity = "TopicFeedsPageActivity";
@@ -736,28 +736,6 @@ ui.查更新钮.on("click", function () {
 
 ui.看日志.on("click", function () { 去看日志(); });
 
-/*
- * 「关于」——「这台手机现在跑的到底是哪一份脚本」。
- * 来源是加载器写进 SharedPreferences 的,这里直接读,不依赖加载器的全局对象
- * (脚本也可能是被 AutoJs6 直接跑的,那时候根本没有加载器)。
- */
-ui.关于钮.on("click", function () {
-    var 来源 = "(没有加载器,可能是直接跑的脚本)";
-    try {
-        var p = context.getSharedPreferences("loader", 0);
-        来源 = String(p.getString("本次来源", "")) || 来源;
-    } catch (e) {}
-    var 换 = String.fromCharCode(10);
-    dialogs.build({
-        title: "关于",
-        content: "应用   小菇爱表白" + 换
-               + "包名   " + context.getPackageName() + 换
-               + "脚本   " + 构建标记 + 换
-               + "来源   " + 来源 + 换 + 换
-               + "「来源」是内置就说明还没拉到远程版;是缓存就说明远程更新已经生效。",
-        positive: "知道了"
-    }).show();
-});
 ui.日志返回.on("click", function () { 当前页 = ""; 刷新状态(); });
 ui.日志诊断.on("click", function () { 看诊断 = !看诊断; 画日志页(); });
 ui.日志清空.on("click", function () {
