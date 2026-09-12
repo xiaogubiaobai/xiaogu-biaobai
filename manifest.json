@@ -1,16 +1,16 @@
 {
   "脚本": {
-    "版本": "2026.09.12.14",
+    "版本": "2026.09.12.15",
     "地址": "https://raw.githubusercontent.com/xiaogubiaobai/xiaogu-biaobai/main/checkin.js",
-    "sha256": "a2ccd0d45e21ca567278c372afab68971764cb5a5b8ded8744cb87503f7efbb6",
-    "说明": "0.1.4:用来验证 App 内自动更新"
+    "sha256": "366af7a38d7158aee37263df0a316a9bb0db93e4355435b03d78a7895b0482c0",
+    "说明": "按能力挑腾讯视频(问系统谁能处理 txvideo://),版本页显示操作对象;修多账号模式下认目标晚于第一条深链"
   },
   "APK": {
     "最低版本号": 5,
     "最新版本号": 5,
     "最新版本名": "0.1.4",
     "地址": "https://github.com/xiaogubiaobai/xiaogu-biaobai/releases/download/v0.1.4/xiaogu-biaobai-0.1.4.apk",
-    "sha256": "f1637dd6ab07530ab9d2df0aa01094f8d615e16fae9b107a0a2e3b926d2e97e8"
+    "sha256": "163c6ab6681f154f92eed38f63b5b38d98080085ca79924c639b3f4cea618463"
   },
-  "更新时间": "2026/09/12 20:20"
+  "更新时间": "2026/09/12 22:06"
 }
