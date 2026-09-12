@@ -59,7 +59,7 @@ var 配置 = {
  *    我为此白改了好几轮,还有一次跑着旧脚本把当天 7 个角色的表白机会全用光了。
  *    现在启动日志第一行就报这个戳,跟 build.py 打印的对一下就知道装对没有。
  */
-var 构建标记 = "远程 2026.09.12.13";
+var 构建标记 = "远程 2026.09.12.14";
 
 var 腾讯包 = "com.tencent.qqlive";
 var 角色页Activity = "TopicFeedsPageActivity";
