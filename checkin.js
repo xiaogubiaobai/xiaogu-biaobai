@@ -59,7 +59,7 @@ var 配置 = {
  *    我为此白改了好几轮,还有一次跑着旧脚本把当天 7 个角色的表白机会全用光了。
  *    现在启动日志第一行就报这个戳,跟 build.py 打印的对一下就知道装对没有。
  */
-var 构建标记 = "远程 2026.09.12.12";
+var 构建标记 = "远程 2026.09.12.13";
 
 var 腾讯包 = "com.tencent.qqlive";
 var 角色页Activity = "TopicFeedsPageActivity";
@@ -278,6 +278,9 @@ ui.layout(
                     <text id="版本正文" text="" textSize="14sp" textColor="#333333"/>
                     <button id="查更新钮" text="检查更新" textSize="16sp" h="52"
                             margin="0 18 0 6" bg="#1a73e8" textColor="#ffffff"/>
+                    {/* 只在真的有新安装包时才出现 —— 平时不该让用户看到一个点不动的按钮 */}
+                    <button id="装新包钮" text="下载并安装新版" textSize="16sp" h="52"
+                            visibility="gone" margin="0 8 0 6" bg="#1e8e3e" textColor="#ffffff"/>
                     <text id="查更新说明" text="" textSize="13sp" textColor="#8a8a8a" margin="0 4 0 0"/>
                 </vertical>
             </scroll>
@@ -715,6 +718,7 @@ function 画版本页() {
            + "上次检查  " + 何时 + 行分
            + "结果      " + 读加载器偏好("上次查结果", "(还没查过)");
     ui.run(function () {
+        ui.装新包钮.setVisibility(新包提示 ? android.view.View.VISIBLE : android.view.View.GONE);
         ui.版本正文.setText(文);
         ui.查更新说明.setText("每 6 小时自动查一次;点上面的按钮可以立刻查,不受这个限制。"
                            + 行分 + "查到新版要重开 App(从最近任务划掉再打开)才生效。");
@@ -746,6 +750,92 @@ ui.查更新钮.on("click", function () {
         } else if (次 > 40) {                 // 20 秒还没结论,当它超时
             clearInterval(表);
             ui.查更新说明.setText("检查超时,可能是网络不通,稍后再试。");
+        }
+    }, 500);
+});
+
+/*
+ * ── 下载并安装新安装包 ──
+ * ⚠️ REQUEST_INSTALL_PACKAGES 是**特殊权限**,给不了自己,也没法用 requestPermissions 弹框。
+ *    只能把用户送到系统的「安装未知应用」页面,他自己打开。
+ *    跟无障碍、悬浮窗一样,App 只能送到门口。
+ */
+function 能装包() {
+    try {
+        if (android.os.Build.VERSION.SDK_INT < 26) return true;
+        return context.getPackageManager().canRequestPackageInstalls();
+    } catch (e) { return false; }
+}
+
+function 去开安装权限() {
+    try {
+        var it = new android.content.Intent(
+            android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+            android.net.Uri.parse("package:" + context.getPackageName()));
+        it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+        context.startActivity(it);
+    } catch (e) { toast("打不开安装权限设置:" + e); }
+}
+
+/** 把下载好的 APK 交给系统安装器。Android 7+ 必须用 content:// —— file:// 会抛 FileUriExposedException */
+function 拉起安装(路径) {
+    try {
+        var f = new java.io.File(路径);
+        if (!f.exists()) { toast("安装包不见了,重新下载"); return; }
+        var uri = androidx.core.content.FileProvider.getUriForFile(
+            context, context.getPackageName() + ".fileprovider", f);
+        var it = new android.content.Intent(android.content.Intent.ACTION_VIEW);
+        it.setDataAndType(uri, "application/vnd.android.package-archive");
+        it.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                  | android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+        context.startActivity(it);
+    } catch (e) {
+        toast("拉不起安装器:" + e);
+        诊("拉起安装失败:" + e);
+    }
+}
+
+ui.装新包钮.on("click", function () {
+    if (typeof 加载 === "undefined" || !加载.开后台下载) {
+        toast("这份脚本不是通过加载器跑的,没有更新功能");
+        return;
+    }
+    if (!能装包()) {
+        dialogs.build({
+            title: "需要「安装未知应用」权限",
+            content: "下一页请把「小菇爱表白」的开关打开,然后按返回键回来再点一次。"
+                   + String.fromCharCode(10) + String.fromCharCode(10)
+                   + "这个权限只用来安装本应用自己的更新包,不点这个按钮就永远用不到。",
+            positive: "去开启", negative: "算了"
+        }).on("positive", function () { 去开安装权限(); }).show();
+        return;
+    }
+    ui.装新包钮.setText("准备下载…");
+    加载.存("下载状态", "");
+    加载.开后台下载();
+    /*
+     * 同样不能在 UI 线程等 —— 下载跑在后台线程,这里轮询偏好里的「下载状态」。
+     * 56 MB 慢的话要几十秒,所以给到 5 分钟。
+     */
+    var 次 = 0;
+    var 表 = setInterval(function () {
+        次++;
+        var 态 = 读加载器偏好("下载状态", "");
+        if (态 === "就绪") {
+            clearInterval(表);
+            ui.装新包钮.setText("下载并安装新版");
+            拉起安装(加载.新包路径);
+        } else if (态.indexOf("失败") === 0) {
+            clearInterval(表);
+            ui.装新包钮.setText("下载并安装新版");
+            dialogs.build({ title: "下载没成功", content: 态, positive: "知道了" }).show();
+        } else if (态) {
+            ui.装新包钮.setText(态);
+        }
+        if (次 > 600) {                       // 5 分钟
+            clearInterval(表);
+            ui.装新包钮.setText("下载并安装新版");
+            toast("下载超时");
         }
     }, 500);
 });
