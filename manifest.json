@@ -1,9 +1,9 @@
 {
   "脚本": {
-    "版本": "2026.09.13.1",
+    "版本": "2026.09.13.2",
     "地址": "https://raw.githubusercontent.com/xiaogubiaobai/xiaogu-biaobai/main/checkin.js",
-    "sha256": "40ad4ff511ca87eb47c347f81cff9b6f6909de75fa0f74283d35281967adcc69",
-    "说明": "无障碍引导改用深链定位+toast轮播;删掉会死锁的悬浮窗引导卡"
+    "sha256": "f43db2d44ddbec25bf03d8c529e5ab198ac700d15662dc1bd283329fddfd6c71",
+    "说明": "补记:悬浮窗死锁、pause事件不触发、adb写无障碍名单的顺序"
   },
   "APK": {
     "最低版本号": 5,
@@ -12,5 +12,5 @@
     "地址": "https://github.com/xiaogubiaobai/xiaogu-biaobai/releases/download/v0.1.4/xiaogu-biaobai-0.1.4.apk",
     "sha256": "8f4cf69117b2de071011cc325d765157c89e53ba544b2e6340493d9b7dd5f53a"
   },
-  "更新时间": "2026/09/13 07:16"
+  "更新时间": "2026/09/13 07:23"
 }
