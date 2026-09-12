@@ -59,7 +59,7 @@ var 配置 = {
  *    我为此白改了好几轮,还有一次跑着旧脚本把当天 7 个角色的表白机会全用光了。
  *    现在启动日志第一行就报这个戳,跟 build.py 打印的对一下就知道装对没有。
  */
-var 构建标记 = "远程 2026.09.12.15";
+var 构建标记 = "远程 2026.09.13.1";
 
 /*
  * ── 用哪个腾讯视频 ──
@@ -145,6 +145,9 @@ var 日志档 = (function () {
  *    而 manifest 远程更新改不了)。
  */
 var 当前页 = "";
+var 展开受限 = false;        // 「开关是灰的?」那一段展开没有
+var 自动展开过 = false;      // 只自动展开一次,之后听用户的
+var 试过开无障碍 = false;    // 用户点过「去开启无障碍」没有
 var 看诊断 = false;          // 日志页里要不要显示 [诊断] 行
 var 上次结果 = "";            // 跑完留在界面上的那行结果,见布局里的 结果区
 var 本轮报过页面账号 = false;   // 见 签一个:每轮至少把读到的页面账号报一次
@@ -207,9 +210,14 @@ ui.layout(
               ⚠️ 原先是「只在没开的时候冒出一块提示」,问题是**全开好之后界面上一点痕迹都没有** ——
                  用户没法确认自己到底开了什么,想回头关掉也无从下手。
                  大众 App 的通行做法是一个常驻列表:每项显示状态,点了跳对应的系统设置页。
-              ⚠️ 这三个都是**系统级开关,App 自己扳不动**(见下面「无障碍开关 App 自己开不了」),
-                 点击只能把用户送到系统页面。所以右边放的是**状态文字**而不是 Switch ——
-                 做成 Switch 会让人以为点一下就能开,点了却跳走,反而更困惑。
+              ⚠️ 三行**不是一类东西**,所以长得不一样 —— 差别必须让用户看得出来,不能让他猜:
+                 · 前两行是**系统级授权,App 自己扳不动**(Android 明令禁止)。点击只能把用户
+                   送到系统页面 → 右边是「状态 + 常驻箭头 ›」,这是「会跳走」的视觉语言。
+                   做成 Switch 会骗人:一拨就跳走、回来还是原样,像坏了。
+                 · 第三行是 **App 自己的偏好**(跑完发不发),我们能就地切换 → 右边是真 Switch。
+                 这正是 Android 系统设置自己在用的区分:导航用箭头,就地切换用 Switch。
+              ⚠️ 箭头要**常驻**。原先只在「未开启」时才画箭头,可是两行无论开没开都能点 ——
+                 开启之后箭头消失,看起来就不可点了,是在说谎。
             */}
             <vertical id="权限区">
                 <horizontal id="行无障碍" h="64" gravity="center_vertical">
@@ -219,6 +227,32 @@ ui.layout(
                     </vertical>
                     <text id="态无障碍" text="—" textSize="14sp" textColor="#8a8a8a"/>
                 </horizontal>
+
+                {/*
+                  没开无障碍时的引导。**贴着它管的那一行**,不要散到别处去。
+                  ⚠️ 原先是散成三处:顶上这一行、中间一个黄色「受限设置」框、底下主钮变成
+                     「去开启无障碍」—— 同一件事三个入口,而且「打开应用信息」排在
+                     「去开启」前面,可它多数人根本不需要做。用户原话:「有点重复」「顺序感觉有点怪」。
+                  ⚠️ 受限设置收成一行可展开的:**多数手机不需要**,只有开关点不动时才要。
+                     真检测到被挡(可能被受限设置挡())时自动展开一次,不用用户自己去猜。
+                */}
+                <vertical id="无障碍引导" visibility="gone" bg="#fdeceb" padding="14" margin="0 6 0 10">
+                    <text text="签到必须先开这个,不然读不到页面、也点不了按钮。"
+                          textSize="13sp" textColor="#8a1c14"/>
+                    <button id="去开无障碍钮" text="去开启无障碍" textSize="17sp" h="56"
+                            margin="0 10 0 6" bg="#b3261e" textColor="#ffffff"/>
+                    <text text="打开后:点「已安装的应用」(有的手机叫「已下载的服务」)&#10;→ 往下找「小菇爱表白」→ 打开开关"
+                          textSize="13sp" textColor="#8a1c14"/>
+                    <text id="受限标题" text="开关是灰的、点不动? ›" textSize="13sp"
+                          textColor="#1a73e8" margin="0 10 0 0" padding="0 4"/>
+                    <vertical id="受限详情" visibility="gone" margin="0 6 0 0">
+                        <text text="Android 13 以后,从文件装的应用要先解锁一次:&#10;打开应用信息 → 点右上角那三个点 → 允许受限设置&#10;(个别品牌位置不同,找带「受限」字样的那一项)"
+                              textSize="13sp" textColor="#8a5300"/>
+                        <button id="受限钮" text="打开应用信息" textSize="15sp" h="48"
+                                margin="0 8 0 0" bg="#f57c00" textColor="#ffffff"/>
+                    </vertical>
+                </vertical>
+
                 <text h="1" bg="#ececec"/>
                 <horizontal id="行悬浮" h="64" gravity="center_vertical">
                     <vertical w="0" layout_weight="1">
@@ -239,18 +273,20 @@ ui.layout(
                         <text text="跑完发通知" textSize="15sp" textColor="#1f1f1f"/>
                         <text id="通知说明" text="把结果发到通知栏" textSize="12sp" textColor="#8a8a8a"/>
                     </vertical>
+                    {/*
+                      状态文字和开关**并存**,同一时刻只显示一个 —— 因为这一行有两个阶段:
+                        · 系统权限还没给 → 它就是一道门,点了只能跳系统设置 → 显示「未开启 ›」
+                        · 权限给过之后   → 「跑完发不发」是 App 自己的偏好 → 显示真 Switch
+                      ⚠️ 不能一直摆个 Switch:权限没给时一拨就跳走、回来还是原样,像坏了。
+                         而且会留下「偏好=要发,但系统不让」这种自相矛盾的状态。
+                    */}
+                    <text id="态通知" text="—" textSize="14sp" textColor="#8a8a8a"/>
                     <Switch id="通知开关" checked="false"/>
                 </horizontal>
+                <text id="权限脚注" text="带 › 的要去系统设置里开,App 自己开不了"
+                      textSize="12sp" textColor="#8a8a8a" margin="0 8 0 0"/>
             </vertical>
 
-            {/* Android 13+ 的「受限设置」拦路虎。只在真的会被拦时才露出来。*/}
-            <vertical id="受限提示" bg="#fff4e5" padding="14" margin="0 12 0 0" visibility="gone">
-                <text text="开关是灰的、点不动?" textSize="15sp" textStyle="bold" textColor="#8a5300"/>
-                <text text="Android 13 以后,从文件装的应用要先解锁一次:&#10;打开应用信息 → 点右上角那三个点 → 允许受限设置&#10;(个别品牌位置不同,找带「受限」字样的那一项)"
-                      textSize="13sp" textColor="#8a5300" margin="0 6"/>
-                <button id="受限钮" text="打开应用信息" textSize="15sp" h="48"
-                        bg="#f57c00" textColor="#ffffff"/>
-            </vertical>
 
             <button id="主钮" text="请稍候" textSize="19sp" h="60" margin="0 18 0 6"
                     bg="#1a73e8" textColor="#ffffff"/>
@@ -262,11 +298,6 @@ ui.layout(
                     margin="0 0 0 10" bg="#7b5ea7" textColor="#ffffff"/>
 
             
-            {/* 系统只肯把我们送到无障碍总列表,送不到我们那一行 ——
-                直达要 signature 级权限,实测拿不到。所以后续两跳写成文字。*/}
-            <text id="步骤提示" textSize="13sp" textColor="#777777" margin="0 0 0 12"
-                  visibility="gone"
-                  text="打开后:点「已安装的应用」(有的手机叫「已下载的服务」)&#10;→ 往下找「小菇爱表白」→ 打开开关"/>
 
             {/* 两个入口都放在按钮**下面**:它们不是主功能,不该占首屏最上头 */}
             <text id="看版本" text="版本信息 / 更新 ›" textSize="14sp"
@@ -480,7 +511,16 @@ function 安装来源() {
     }
 }
 
-function 受限设置挡着() {
+/*
+ * 「可能」被受限设置挡着 —— 按安装来源猜,只用来写诊断日志。
+ *
+ * ⚠️ 别拿它决定界面。它跟「现在真的被挡着」不是一回事:实测 appop 已经是 allow
+ *    (用户早解锁过)、安装来源仍然是 null,于是永远误报。
+ * ⚠️ 也别指望直接问 appop:`unsafeCheckOpNoThrow("android:access_restricted_settings", …)`
+ *    在这台机器上会抛异常(那个 op 字符串在部分版本是隐藏的),悄悄落回猜的分支。
+ *    界面改用**行为判据**:用户点过「去开启」、回来还是没开 —— 见 试过开无障碍。
+ */
+function 可能被受限设置挡() {
     if (android.os.Build.VERSION.SDK_INT < 33) return false;   // Android 12 及以下没这机制
     var 来源 = 安装来源();
     return !(来源 && 商店们.indexOf(String(来源)) >= 0);
@@ -515,7 +555,8 @@ ui.受限钮.on("click", function () {
  * 【所有调用都包 try/catch】
  *   悬浮窗是锦上添花,权限没给、厂商魔改、创建失败……都不该让签到本身挂掉。
  */
-var 控制条 = null, 引导卡 = null;
+var 控制条 = null;
+var 引导批次 = 0;       // 点「去开启无障碍」/ 回到本应用 都会 +1,让上一批 toast 自动作废
 // 悬浮条刚创建的头几百毫秒视图还没挂上,setText 必然失败一两次 —— 那是正常的,
 // 不该打进用户日志。连续失败很多次才是真出事了。
 var 条错次数 = 0;
@@ -606,50 +647,25 @@ function 关控制条() {
     控制条 = null;
 }
 
-function 开引导卡(正文) {
-    if (引导卡 || !悬浮窗开着()) return;
-    try {
-        引导卡 = floaty.rawWindow(
-            <frame>
-                <vertical bg="#f2202124" padding="16" w="auto">
-                    <text id="字" text="" textColor="#ffffff" textSize="14sp"/>
-                    <button id="回" text="返回小菇爱表白" w="auto" h="42" textSize="13sp"
-                            margin="0 10 0 0" bg="#1a73e8" textColor="#ffffff"/>
-                </vertical>
-            </frame>);
-        ui.run(function () { try { 引导卡.字.setText(正文); } catch (e) {} });
-        setTimeout(function () {   // 同上:这些都要等 attach 完再设,不然 NPE
-            try { 引导卡.setTouchable(true); } catch (e) {}
-            try { 引导卡.setPosition(16, Math.max(80, device.height - 560)); } catch (e) {}
-        }, 400);
-        引导卡.回.on("click", function () {
-            关引导卡();
-            回本应用();
-        });
-    } catch (e) {
-        引导卡 = null;
-    }
-}
 
-function 关引导卡() {
-    try { if (引导卡) 引导卡.close(); } catch (e) {}
-    引导卡 = null;
-}
 /* ═════════════════════════════════ */
 
 /** 权限列表右边那一格:已开启=绿,未开启=红并带个 ›,暗示可以点 */
+/*
+ * 系统权限行右边的状态。
+ * ⚠️ 箭头 `›` **两种状态都要有** —— 这两行无论开没开都能点(点了都跳系统设置)。
+ *    原先只在「未开启」时画箭头,开启之后箭头消失,看起来就不可点了。
+ */
 function 写状态(视图, 开着) {
-    视图.setText(开着 ? "已开启" : "未开启  ›");
+    视图.setText((开着 ? "已开启" : "未开启") + "  ›");
     视图.setTextColor(colors.parseColor(开着 ? "#1b7f3b" : "#b3261e"));
 }
 
 function 刷新状态() {
     var 开了 = 无障碍开着();
-    // 无障碍一开好,引导卡就该收 —— 用户可能是在设置里开的,这时我们不在前台
-    if (开了 && 引导卡) 关引导卡();
     var 跑着 = 控制.跑着;
     // 跑起来之后那两块引导没有意义了,收掉
-    var 要提示受限 = !开了 && !跑着 && 受限设置挡着();
+
     var 显 = android.view.View.VISIBLE, 隐 = android.view.View.GONE;
     var 悬浮 = 悬浮窗开着(), 通知 = 通知开着();
     if (跑着 && 控制条) {
@@ -668,12 +684,21 @@ function 刷新状态() {
         ui.状态.setVisibility(跑着 ? 显 : 隐);
         写状态(ui.态无障碍, 开了);
         写状态(ui.态悬浮, 悬浮);
-        正在同步开关 = true;
-        ui.通知开关.setChecked(通知 && 想要通知());
-        正在同步开关 = false;
-        // 三种状态要分清:用户自己关了 / 用户要但系统没给 / 都齐了
-        ui.通知说明.setText(!想要通知() ? "已关闭,跑完不发通知"
-                          : (通知 ? "把结果发到通知栏" : "系统还没允许通知,点开关重试"));
+        /*
+         * 通知行按阶段换外观:没拿到系统权限时它是一道门(跟上面两行一样),
+         * 拿到之后才是我们自己的开关。
+         */
+        ui.通知开关.setVisibility(通知 ? 显 : 隐);
+        ui.态通知.setVisibility(通知 ? 隐 : 显);
+        if (通知) {
+            正在同步开关 = true;
+            ui.通知开关.setChecked(想要通知());
+            正在同步开关 = false;
+            ui.通知说明.setText(想要通知() ? "把结果发到通知栏" : "已关闭,跑完不发通知");
+        } else {
+            写状态(ui.态通知, false);
+            ui.通知说明.setText("要先在系统里允许通知");
+        }
         // 子页和主页互斥。跑起来会自动切回主页,免得进度看不见。
         if (当前页 && 跑着) 当前页 = "";
         ui.日志页.setVisibility(当前页 === "日志" ? 显 : 隐);
@@ -686,9 +711,22 @@ function 刷新状态() {
         if (!跑着 && 上次结果) ui.结果文.setText(上次结果);
         ui.滚动.setVisibility(跑着 ? 显 : 隐);        // 实时明细只在跑的时候
         ui.看日志.setVisibility(跑着 ? 隐 : 显);
-        ui.受限提示.setVisibility(要提示受限 ? 显 : 隐);
-        ui.步骤提示.setVisibility((!开了 && !跑着) ? 显 : 隐);
-        ui.主钮.setVisibility(跑着 ? 隐 : 显);
+        // 引导块只在「没开 + 没在跑」时出现,贴着无障碍那一行
+        var 要引导 = !开了 && !跑着;
+        ui.无障碍引导.setVisibility(要引导 ? 显 : 隐);
+        /*
+         * ⚠️ 自动展开的判据是**行为**,不是猜:「点过去开启、回来还是没开」。
+         *    那正是这段提示有用的时刻,而且不会冤枉已经解锁过的人。
+         *    原先按安装来源猜,结果几乎人人都被展开一大段,把界面撑得很长。
+         */
+        if (要引导 && 试过开无障碍 && !自动展开过) { 自动展开过 = true; 展开受限 = true; }
+        ui.受限详情.setVisibility(展开受限 ? 显 : 隐);
+        ui.受限标题.setText("开关是灰的、点不动? " + (展开受限 ? "⌄" : "›"));
+        /*
+         * ⚠️ 主钮在没开无障碍时**整个藏起来**,不再变成「去开启无障碍」——
+         *    那会跟引导块里的按钮重复,而且位置隔着两行,用户不知道该点哪个。
+         */
+        ui.主钮.setVisibility((跑着 || !开了) ? 隐 : 显);
         ui.切号钮.setVisibility((跑着 || !开了) ? 隐 : 显);
         ui.切签钮.setVisibility((跑着 || !开了) ? 隐 : 显);
         ui.控制条.setVisibility(跑着 ? 显 : 隐);
@@ -701,8 +739,7 @@ function 刷新状态() {
             ui.暂停钮.setText(控制.暂停 ? "继续" : "暂停");
             ui.暂停钮.setBackgroundColor(colors.parseColor(控制.暂停 ? "#1e8e3e" : "#f57c00"));
         }
-        ui.主钮.setText(开了 ? "开始签到" : "去开启无障碍");
-        ui.主钮.setBackgroundColor(colors.parseColor(开了 ? "#1a73e8" : "#b3261e"));
+        ui.主钮.setText("开始签到");
     });
     return 开了;
 }
@@ -947,8 +984,15 @@ ui.关结果.on("click", function () {
     try { if (偏好) 偏好.put("上次结果", ""); } catch (e) {}
     刷新状态();
 });
-ui.行无障碍.on("click", function () { 去开无障碍(); });
+ui.行无障碍.on("click", function () { 试过开无障碍 = true; 去开无障碍(); });
+ui.去开无障碍钮.on("click", function () { 试过开无障碍 = true; 去开无障碍(); });
+ui.受限标题.on("click", function () { 展开受限 = !展开受限; 刷新状态(); });
 ui.行悬浮.on("click", function () { 求悬浮窗(); });
+/*
+ * 没拿到系统权限时,整行可点 —— 那时它显示的是「未开启 ›」,跟上面两行同一个语义。
+ * 拿到权限之后这一行的交互交给 Switch,点行本身不做事(免得误触切换)。
+ */
+ui.行通知.on("click", function () { if (!通知开着()) 要通知权限(); });
 
 
 ui.暂停钮.on("click", function () {
@@ -1054,6 +1098,17 @@ ui.主钮.on("click", function () {
  * 上,系统是在「建完渠道后第一次启动 Activity」才弹授权框 —— 建得越早,框来得越早,
  * 也就不会在跑完那一刻打断用户了。
  */
+/*
+ * ⚠️ 「在不在前台」只能靠 Activity 生命周期事件,**不能用 currentPackage()** ——
+ *    那个要无障碍服务,而这段场景恰恰是无障碍没开的时候。
+ */
+try {
+    // 回到本应用 = 引导那批 toast 该闭嘴了(步骤在页面上写着,不用再弹)
+    ui.emitter.on("resume", function () { 引导批次++; });
+} catch (e) {
+    诊("接不上 resume 事件:" + e);
+}
+
 刷新状态();
 setInterval(刷新状态, 1000);
 
@@ -1066,7 +1121,7 @@ setInterval(刷新状态, 1000);
     诊("环境:Android " + android.os.Build.VERSION.RELEASE
         + " (SDK " + android.os.Build.VERSION.SDK_INT + ")"
         + " · 安装来源 " + 来源
-        + " · 可能被受限设置挡 " + 受限设置挡着()
+        + " · 可能被受限设置挡 " + 可能被受限设置挡()
         + " · 无障碍 " + (无障碍开着() ? "开" : "关"));
 })();
 
@@ -1142,29 +1197,117 @@ function 记住要通知(要) {
     try { if (偏好) 偏好.put("通知", !!要); } catch (e) {}
 }
 
+/*
+ * 通知到底能不能发。
+ *
+ * ⚠️ **不要用 checkSelfPermission(POST_NOTIFICATIONS)** —— 对 targetSdk < 33 的应用
+ *    (我们是 29,inrt 模板给的,改不了)框架会把这个权限**自动授予**,免得老应用崩,
+ *    于是它永远返回「已授权」,而实际上系统里通知是关的(importance=NONE)。
+ *    实测:dumpsys 显示 granted=false、importance=NONE,checkSelfPermission 却说 0(已授权),
+ *    结果界面把「一道门」画成了「真开关」。
+ *
+ * areNotificationsEnabled() 才是权威判据,API 24 起就有,跟 targetSdk 无关。
+ */
 function 通知开着() {
-    if (android.os.Build.VERSION.SDK_INT < 33) return true;   // Android 13 以下不用运行时授权
-    try { return context.checkSelfPermission("android.permission.POST_NOTIFICATIONS") === 0; }
-    catch (e) { return true; }   // 问不出来就别烦用户
+    try {
+        var NM = context.getSystemService(android.content.Context.NOTIFICATION_SERVICE);
+        return !!NM.areNotificationsEnabled();
+    } catch (e) { return true; }   // 问不出来就别烦用户
 }
 
-/** 送去系统的无障碍列表。App 只能送到这一步,开关得用户自己按。 */
+/*
+ * 送去系统的无障碍设置。App 只能送到这一步,开关得用户自己按。
+ *
+ * ⚠️⚠️ **这里曾经浮一张悬浮卡片把步骤显示在系统设置上面,已经彻底拿掉,别再加回来。**
+ *    不是「修不好」,是这条路根本走不通,两个独立的原因:
+ *
+ *    ① **在 UI 线程里调 `floaty.rawWindow()` 必然死锁。** 它内部要 post 到 UI 线程
+ *       建窗口再等结果,而调用它的就是按钮的点击回调 —— 自己等自己。
+ *       症状极具迷惑性:日志停在「开始创建」那一行,**不报错、不超时**,
+ *       `dumpsys window` 里也根本没有这个窗口,而**整个 App 界面冻死**
+ *       (uiautomator 连控件都读不出来)。查了三轮才定位到。
+ *       这也解释了用户最早看到的「多了个关不掉的黑框、返回后不消失、layout 崩了」。
+ *
+ *    ② **就算改到后台线程建得出来,系统也不给看。** Android 12 起系统设置的无障碍页
+ *       会主动隐藏悬浮窗(防点击劫持),部分机型还会因为「检测到悬浮窗」直接拒绝
+ *       打开无障碍开关 —— 悬浮窗在这一页帮不上忙,只会帮倒忙。
+ *
+ *    替代方案就是下面两条:**深链直接跳到本应用那一行** + **toast 轮播**。
+ */
+
+/*
+ * 深链到本应用自己的无障碍开关页,省掉「在长列表里翻」这一步。
+ *
+ * `:settings:fragment_args_key` 是 AOSP 设置里的老约定:传一个控件 key 进去,
+ * 设置会滚到它并高亮。无障碍列表这里的 key 就是服务的 ComponentName 字符串。
+ * ⚠️ 各家 ROM 支持程度不一(Samsung One UI 不保证),所以它只是**锦上添花**:
+ *    不认的话就是普通的无障碍首页,后面的 toast 轮播照样管用,不能依赖它成功。
+ *
+ * ⚠️ 服务类名**不要写死** —— inrt 模板升级过就对不上了,而且写死了不报错、只是不高亮,
+ *    属于「坏了也不知道」。问系统要:已安装的无障碍服务里找包名是自己的那个。
+ */
+function 本应用无障碍服务名() {
+    try {
+        var AM = context.getSystemService(android.content.Context.ACCESSIBILITY_SERVICE);
+        var 全 = AM.getInstalledAccessibilityServiceList();
+        var 我 = context.getPackageName();
+        for (var i = 0; i < 全.size(); i++) {
+            var id = String(全.get(i).getId());
+            if (id.indexOf(我 + "/") === 0) return id;
+        }
+    } catch (e) { 诊("查无障碍服务名出错:" + e); }
+    return "";
+}
+
+/*
+ * 在系统设置里循环提示步骤。
+ *
+ * ⚠️ 为什么是**轮播**不是一条:单条 toast 只亮两三秒,用户反馈「一下就没了看不太到」。
+ *    这里一次一条、每 3.5 秒换一条(长 toast 约 3.5 秒),三步循环两遍 ≈ 21 秒,
+ *    足够从设置首页翻到应用列表。
+ * ⚠️ 用 setTimeout(UI 线程)排期,**不要开后台线程** —— AutoJs6 的 API 在后台线程会挂死。
+ * ⚠️ 两个自动闭嘴的条件都要留:批次过期(又点了一次,**或者人已经回到 App**)、已经开好了。
+ *    少一个就会出现「已经开完了还在弹」这种像 bug 的体验。
+ * ⚠️ **不要用 `ui.emitter.on("pause")` 判在不在前台** —— 试过,这个事件在 inrt 打包版里
+ *    不触发(或触发不到脚本这层),于是「在前台」永远是 true,六条 toast **一条都不弹**,
+ *    而且不报错。只用 resume 这一个已知可靠的事件,让它去作废批次。
+ */
+function 轮播步骤() {
+    var 步 = ["① 点「已安装的应用」",
+             "② 往下找「小菇爱表白」",
+             "③ 打开它的开关"];
+    引导批次++;
+    var 本批 = 引导批次;
+    for (var i = 0; i < 6; i++) {
+        (function (n) {
+            setTimeout(function () {
+                // ⚠️ 这些早退都要留痕:「toast 一条没出现」时,没日志就只能靠猜
+                if (本批 !== 引导批次) { if (n === 0) 诊("轮播:批次过期,不弹"); return; }
+                if (无障碍开着()) { if (n === 0) 诊("轮播:已开好,不弹"); return; }
+                try { toast(步[n % 步.length]); if (n === 0) 诊("轮播:第一条已发"); }
+                catch (e) { 诊("轮播 toast 出错:" + e); }
+            }, n * 3500);
+        })(i);
+    }
+}
+
 function 去开无障碍() {
-    // 没开 → 送去系统的无障碍列表。App 只能送到这一步,开关得用户自己按。
     try {
         var 设置 = new android.content.Intent(
             android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS);
         设置.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+        var 服务名 = 本应用无障碍服务名();
+        if (服务名) {
+            var 参数 = new android.os.Bundle();
+            参数.putString(":settings:fragment_args_key", 服务名);
+            设置.putExtra(":settings:fragment_args_key", 服务名);
+            设置.putExtra(":settings:show_fragment_args", 参数);
+        }
         context.startActivity(设置);
-        // 有悬浮窗权限的话,把步骤浮在设置界面上 —— 用户在列表里翻的时候还看得见。
-        // 这正是市面上那些 App 的做法(分身大师:「请找到【分身大师】，并开启」)。
-        开引导卡("请在列表里找到「小菇爱表白」\n\n" +
-               "① 点「已安装的应用」(有的手机叫「已下载的服务」)\n" +
-               "② 往下找「小菇爱表白」\n" +
-               "③ 打开开关\n\n" +
-               "开关是灰的?先回来点「打开应用信息」→ 右上角三个点 → 允许受限设置");
-        toast("请在列表里找到本应用并打开");
+        诊("去开无障碍:已跳到系统无障碍设置页" + (服务名 ? " · 带定位 " + 服务名 : " · 没查到服务名"));
+        轮播步骤();
     } catch (e) {
+        诊("去开无障碍出错:" + e);      // ⚠️ 以前只 toast 不记日志,出了事查不到
         toast("打不开无障碍设置:" + e);
     }
 }
