@@ -59,9 +59,61 @@ var 配置 = {
  *    我为此白改了好几轮,还有一次跑着旧脚本把当天 7 个角色的表白机会全用光了。
  *    现在启动日志第一行就报这个戳,跟 build.py 打印的对一下就知道装对没有。
  */
-var 构建标记 = "远程 2026.09.12.14";
+var 构建标记 = "远程 2026.09.12.15";
 
-var 腾讯包 = "com.tencent.qqlive";
+/*
+ * ── 用哪个腾讯视频 ──
+ *
+ * 不写死包名去猜,而是**问系统「谁能处理 txvideo:// 」** —— 判据是能力不是名字,
+ * 所以国际版、改过名的包、以后新出的变体,都会自动落到正确答案上。
+ *   0 个候选  → 提示没装
+ *   1 个      → 直接用,不烦用户
+ *   2 个以上  → 让用户选一次,记住
+ *
+ * ⚠️ 分身/双开够不着:Samsung 双开的应用在**另一个 Android 用户**下,
+ *    我们的 App 跑在主用户,Intent 和无障碍都是按用户隔离的,
+ *    技术上根本到不了那份。这点要如实告诉用户,不能假装支持。
+ */
+var 默认腾讯包 = "com.tencent.qqlive";
+var 腾讯包 = 默认腾讯包;          // 启动时由 定腾讯包() 改写
+
+/** 问系统:哪些应用能处理我们的深链。返回 [{包名, 名字, 版本}] */
+function 腾讯候选() {
+    var 出 = [];
+    try {
+        var it = new android.content.Intent(android.content.Intent.ACTION_VIEW,
+            android.net.Uri.parse("txvideo://v.qq.com/TopicFeedsPageActivity"));
+        var pm = context.getPackageManager();
+        var 表 = pm.queryIntentActivities(it, 0);
+        var 见过 = {};
+        for (var i = 0; i < 表.size(); i++) {
+            var 包名 = String(表.get(i).activityInfo.packageName);
+            if (见过[包名]) continue;
+            见过[包名] = true;
+            var 名字 = 包名, 版本 = "?";
+            try {
+                var ai = pm.getApplicationInfo(包名, 0);
+                名字 = String(pm.getApplicationLabel(ai));
+                版本 = String(pm.getPackageInfo(包名, 0).versionName);
+            } catch (e) {}
+            出.push({ 包名: 包名, 名字: 名字, 版本: 版本 });
+        }
+    } catch (e) { 诊("查腾讯候选出错:" + e); }
+    return 出;
+}
+
+/** 定下这次用哪个。有记住的就用记住的(前提是它还在候选里)。 */
+function 定腾讯包() {
+    var 候选 = 腾讯候选();
+    if (!候选.length) { 腾讯包 = 默认腾讯包; return 候选; }
+    var 记住的 = "";
+    try { if (偏好) 记住的 = String(偏好.get("腾讯包", "") || ""); } catch (e) {}
+    for (var i = 0; i < 候选.length; i++) {
+        if (候选[i].包名 === 记住的) { 腾讯包 = 记住的; return 候选; }
+    }
+    腾讯包 = 候选[0].包名;         // 没记住过、或记的那个已经不在了
+    return 候选;
+}
 var 角色页Activity = "TopicFeedsPageActivity";
 
 /*
@@ -281,6 +333,9 @@ ui.layout(
                     {/* 只在真的有新安装包时才出现 —— 平时不该让用户看到一个点不动的按钮 */}
                     <button id="装新包钮" text="下载并安装新版" textSize="16sp" h="52"
                             visibility="gone" margin="0 8 0 6" bg="#1e8e3e" textColor="#ffffff"/>
+                    {/* 只有当系统里不止一个应用能处理 txvideo:// 时才出现 */}
+                    <text id="换腾讯" text="换一个腾讯视频 ›" textSize="14sp" textColor="#1a73e8"
+                          visibility="gone" margin="0 14 0 4" padding="0 6"/>
                     <text id="查更新说明" text="" textSize="13sp" textColor="#8a8a8a" margin="0 4 0 0"/>
                 </vertical>
             </scroll>
@@ -710,15 +765,33 @@ function 画版本页() {
         }
     } catch (e) {}
 
+    /*
+     * 操作的是哪个腾讯视频。出问题时这是最有用的一行 ——
+     * 脚本认的是那个 App 的页面名和界面文字,版本一变就可能不灵。
+     */
+    var 候选 = 定腾讯包();
+    var 腾讯行 = "(没找到能处理 txvideo:// 的应用)";
+    if (候选.length) {
+        for (var qi = 0; qi < 候选.length; qi++) {
+            if (候选[qi].包名 === 腾讯包) {
+                腾讯行 = 候选[qi].名字 + " " + 候选[qi].版本 + 行分
+                       + "          " + 候选[qi].包名;
+            }
+        }
+        if (候选.length > 1) 腾讯行 += 行分 + "          (系统里有 " + 候选.length + " 个候选)";
+    }
+
     var 文 = "应用      小菇爱表白" + 行分
            + "包名      " + context.getPackageName() + 行分
            + "安装包    " + 包版本 + "(versionCode " + 包版本号 + ")" + 新包提示 + 行分 + 行分
            + "脚本      " + 构建标记 + 行分
            + "来源      " + 来源 + 行分 + 行分
            + "上次检查  " + 何时 + 行分
-           + "结果      " + 读加载器偏好("上次查结果", "(还没查过)");
+           + "结果      " + 读加载器偏好("上次查结果", "(还没查过)") + 行分 + 行分
+           + "操作对象  " + 腾讯行;
     ui.run(function () {
         ui.装新包钮.setVisibility(新包提示 ? android.view.View.VISIBLE : android.view.View.GONE);
+        ui.换腾讯.setVisibility(候选.length > 1 ? android.view.View.VISIBLE : android.view.View.GONE);
         ui.版本正文.setText(文);
         ui.查更新说明.setText("每 6 小时自动查一次;点上面的按钮可以立刻查,不受这个限制。"
                            + 行分 + "查到新版要重开 App(从最近任务划掉再打开)才生效。");
@@ -840,6 +913,23 @@ ui.装新包钮.on("click", function () {
     }, 500);
 });
 
+ui.换腾讯.on("click", function () {
+    var 候选 = 腾讯候选();
+    if (候选.length < 2) { toast("系统里只有一个,没得选"); return; }
+    var 项 = 候选.map(function (c) {
+        return c.名字 + "  " + c.版本 + String.fromCharCode(10) + c.包名
+             + (c.包名 === 腾讯包 ? "  ← 正在用" : "");
+    });
+    dialogs.select("用哪个腾讯视频?", 项).then(function (i) {
+        if (i < 0) return;
+        腾讯包 = 候选[i].包名;
+        try { if (偏好) 偏好.put("腾讯包", 腾讯包); } catch (e) {}
+        诊("用户手动选了 " + 腾讯包);
+        画版本页();
+        toast("已改用 " + 候选[i].名字);
+    });
+});
+
 ui.看日志.on("click", function () { 去看日志(); });
 
 ui.日志返回.on("click", function () { 当前页 = ""; 刷新状态(); });
@@ -883,7 +973,26 @@ function 开跑(任务名, 任务) {
     开控制条();
     刷新状态();
     threads.start(function () {
-        try { 任务(); }
+        try {
+            /*
+             * ⚠️ 认准操作对象这一步必须在**所有任务之前**做,而且要在这个统一入口做。
+             *    原先放在 跑一轮() 里,多账号模式就漏了 —— 跑全部账号() 会先调
+             *    开切号面板() 发深链,那时 腾讯包 还是默认值。
+             *    本机默认值恰好正确所以没暴露,换台手机(国际版、改过名的包)就会打错 App。
+             */
+            var 候选 = 定腾讯包();
+            if (!候选.length) {
+                记("✗ 找不到能处理 txvideo:// 的应用 —— 腾讯视频没装?");
+                toast("没装腾讯视频");
+                return;
+            }
+            var 这个 = null;
+            for (var ci = 0; ci < 候选.length; ci++) if (候选[ci].包名 === 腾讯包) 这个 = 候选[ci];
+            诊("操作对象:" + (这个 ? 这个.名字 + " " + 这个.版本 : "?") + "(" + 腾讯包 + ")"
+               + (候选.length > 1 ? ",另有 " + (候选.length - 1) + " 个候选" : ""));
+
+            任务();
+        }
         catch (e) {
             if (e === 中止信号) 记("■ 用户中止");
             else 记("✗ 出错:" + e);
@@ -1788,11 +1897,6 @@ function 跑一轮() {
     本轮报过页面账号 = false;
     记("=== 腾讯角色签到 " + 时间戳() + " ===");
 
-    if (!app.getAppName(腾讯包)) {
-        记("✗ 没装腾讯视频(" + 腾讯包 + ")");
-        toast("没装腾讯视频");
-        return;
-    }
 
     上一个指纹 = null;
     var 统计 = { 刚签到: 0, 已完成: 0, 待签到: 0, 失败: 0 };
