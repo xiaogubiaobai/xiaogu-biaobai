@@ -1,16 +1,16 @@
 {
   "脚本": {
-    "版本": "2026.09.12.15",
+    "版本": "2026.09.13.1",
     "地址": "https://raw.githubusercontent.com/xiaogubiaobai/xiaogu-biaobai/main/checkin.js",
-    "sha256": "366af7a38d7158aee37263df0a316a9bb0db93e4355435b03d78a7895b0482c0",
-    "说明": "按能力挑腾讯视频(问系统谁能处理 txvideo://),版本页显示操作对象;修多账号模式下认目标晚于第一条深链"
+    "sha256": "40ad4ff511ca87eb47c347f81cff9b6f6909de75fa0f74283d35281967adcc69",
+    "说明": "无障碍引导改用深链定位+toast轮播;删掉会死锁的悬浮窗引导卡"
   },
   "APK": {
     "最低版本号": 5,
     "最新版本号": 5,
     "最新版本名": "0.1.4",
     "地址": "https://github.com/xiaogubiaobai/xiaogu-biaobai/releases/download/v0.1.4/xiaogu-biaobai-0.1.4.apk",
-    "sha256": "163c6ab6681f154f92eed38f63b5b38d98080085ca79924c639b3f4cea618463"
+    "sha256": "8f4cf69117b2de071011cc325d765157c89e53ba544b2e6340493d9b7dd5f53a"
   },
-  "更新时间": "2026/09/12 22:06"
+  "更新时间": "2026/09/13 07:16"
 }
