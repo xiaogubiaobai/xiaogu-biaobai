@@ -1,16 +1,16 @@
 {
   "脚本": {
-    "版本": "2026.09.12.7",
+    "版本": "2026.09.12.8",
     "地址": "https://raw.githubusercontent.com/xiaogubiaobai/xiaogu-biaobai/main/checkin.js",
-    "sha256": "1e2add1735dbaa6d2e3eca66bb339a22c990627c9e9387b3d105c85d20d7d06f",
-    "说明": "加「关于/版本」按钮"
+    "sha256": "5489b706b29f5e444a0f167dc5be03d23b910cbad4fd073d2c22e2b641af7215",
+    "说明": "关于按钮 + 发布脚本:自动版本号、一致性校验、APK 直链"
   },
   "APK": {
     "最低版本号": 1,
     "最新版本号": 1,
     "最新版本名": "0.1.0",
-    "地址": "https://github.com/xiaogubiaobai/xiaogu-biaobai/releases/latest",
+    "地址": "https://github.com/xiaogubiaobai/xiaogu-biaobai/releases/download/v0.1.0/xiaogu-biaobai-0.1.0.apk",
     "sha256": "17ad1d59dc9c68221fd7f1dc5c172858f879b1a001efdb03d13425691b246186"
   },
-  "更新时间": "2026/09/12 18:25"
+  "更新时间": "2026/09/12 18:49"
 }
