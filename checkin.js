@@ -59,7 +59,7 @@ var 配置 = {
  *    我为此白改了好几轮,还有一次跑着旧脚本把当天 7 个角色的表白机会全用光了。
  *    现在启动日志第一行就报这个戳,跟 build.py 打印的对一下就知道装对没有。
  */
-var 构建标记 = "远程 2026.09.12.8";
+var 构建标记 = "远程 2026.09.12.9";
 
 var 腾讯包 = "com.tencent.qqlive";
 var 角色页Activity = "TopicFeedsPageActivity";
@@ -86,7 +86,13 @@ var 日志档 = (function () {
  *   单号:   [09:30:36][某某账号] ── 孟剑卿 ──
  *   多号:   [09:30:56][2/3 另一个账号] ── 孟剑卿 ──
  */
-var 在日志页 = false;        // 日志页是同一个 layout 里的一块,不是新 Activity
+/*
+ * 当前在哪一页:"" 主页 / "日志" / "版本"。
+ * ⚠️ 用一个变量而不是每页一个布尔 —— 布尔多了必然出现「两页同时可见」那种状态。
+ *    所有页都是同一个 layout 里的一块,不新开 Activity(Activity 要写进 manifest,
+ *    而 manifest 远程更新改不了)。
+ */
+var 当前页 = "";
 var 看诊断 = false;          // 日志页里要不要显示 [诊断] 行
 var 上次结果 = "";            // 跑完留在界面上的那行结果,见布局里的 结果区
 var 本轮报过页面账号 = false;   // 见 签一个:每轮至少把读到的页面账号报一次
@@ -202,9 +208,7 @@ ui.layout(
                     margin="0 0 0 10" bg="#5f6368" textColor="#ffffff"/>
             <button id="切签钮" text="切号签到(干跑,不真签)" textSize="16sp" h="52"
                     margin="0 0 0 10" bg="#7b5ea7" textColor="#ffffff"/>
-            {/* 看当前跑的是哪一份脚本。远程更新之后,这里是确认「新版到底生效没有」最快的地方 */}
-            <button id="关于钮" text="关于 / 版本" textSize="16sp" h="52"
-                    margin="0 0 0 10" bg="#5f6368" textColor="#ffffff"/>
+
             
             {/* 系统只肯把我们送到无障碍总列表,送不到我们那一行 ——
                 直达要 signature 级权限,实测拿不到。所以后续两跳写成文字。*/}
@@ -212,9 +216,11 @@ ui.layout(
                   visibility="gone"
                   text="打开后:点「已安装的应用」(有的手机叫「已下载的服务」)&#10;→ 往下找「小菇爱表白」→ 打开开关"/>
 
-            {/* 日志入口放在按钮**下面**:它不是主功能,不该占首屏最上头 */}
-            <text id="看日志" text="运行日志 ›" textSize="14sp"
+            {/* 两个入口都放在按钮**下面**:它们不是主功能,不该占首屏最上头 */}
+            <text id="看版本" text="版本信息 / 更新 ›" textSize="14sp"
                   textColor="#1a73e8" margin="0 14 0 4" padding="0 6"/>
+            <text id="看日志" text="运行日志 ›" textSize="14sp"
+                  textColor="#1a73e8" margin="0 4 0 4" padding="0 6"/>
 
             
         </vertical>
@@ -258,6 +264,22 @@ ui.layout(
             */}
             <scroll id="滚动" h="*" bg="#fafafa" visibility="gone">
                 <text id="日志" text="(还没开始)" textSize="13sp" textColor="#666666" padding="14"/>
+            </scroll>
+        </vertical>
+
+        {/* 版本信息页。跟日志页一样是同一个 layout 里的一块,不新开 Activity */}
+        <vertical id="版本页" visibility="gone" h="*" bg="#ffffff" margin="14 0">
+            <horizontal gravity="center_vertical" padding="14 12">
+                <text id="版本返回" text="‹ 返回" textSize="16sp" textColor="#1a73e8" w="0" layout_weight="1"/>
+            </horizontal>
+            <text h="1" bg="#ececec"/>
+            <scroll h="*">
+                <vertical padding="18">
+                    <text id="版本正文" text="" textSize="14sp" textColor="#333333"/>
+                    <button id="查更新钮" text="检查更新" textSize="16sp" h="52"
+                            margin="0 18 0 6" bg="#1a73e8" textColor="#ffffff"/>
+                    <text id="查更新说明" text="" textSize="13sp" textColor="#8a8a8a" margin="0 4 0 0"/>
+                </vertical>
             </scroll>
         </vertical>
 
@@ -594,12 +616,13 @@ function 刷新状态() {
         // 三种状态要分清:用户自己关了 / 用户要但系统没给 / 都齐了
         ui.通知说明.setText(!想要通知() ? "已关闭,跑完不发通知"
                           : (通知 ? "把结果发到通知栏" : "系统还没允许通知,点开关重试"));
-        // 日志页和主页互斥。跑起来会自动切回主页,免得进度看不见。
-        if (在日志页 && 跑着) 在日志页 = false;
-        ui.日志页.setVisibility(在日志页 ? 显 : 隐);
-        ui.标题.setVisibility(在日志页 ? 隐 : 显);
-        ui.主滚动.setVisibility((!在日志页 && !跑着) ? 显 : 隐);
-        ui.跑动卡.setVisibility((!在日志页 && 跑着) ? 显 : 隐);
+        // 子页和主页互斥。跑起来会自动切回主页,免得进度看不见。
+        if (当前页 && 跑着) 当前页 = "";
+        ui.日志页.setVisibility(当前页 === "日志" ? 显 : 隐);
+        ui.版本页.setVisibility(当前页 === "版本" ? 显 : 隐);
+        ui.标题.setVisibility(当前页 ? 隐 : 显);
+        ui.主滚动.setVisibility((!当前页 && !跑着) ? 显 : 隐);
+        ui.跑动卡.setVisibility((!当前页 && 跑着) ? 显 : 隐);
 
         ui.结果区.setVisibility((!跑着 && 上次结果) ? 显 : 隐);
         if (!跑着 && 上次结果) ui.结果文.setText(上次结果);
@@ -634,6 +657,83 @@ ui.通知开关.on("check", function (勾上) {
     if (勾上 && !通知开着()) 要通知权限();
 });
 
+/*
+ * ── 版本信息页 ──
+ * 回答两个问题:现在跑的是哪一份脚本、以及「我要立刻更新」。
+ * 加载器把检查结果写在 SharedPreferences 里,这里直接读 ——
+ * 不依赖加载器的全局对象,因为脚本也可能被 AutoJs6 直接跑,那时根本没有加载器。
+ */
+function 读加载器偏好(键, 默认值) {
+    try {
+        return String(context.getSharedPreferences("loader", 0).getString(键, 默认值));
+    } catch (e) { return 默认值; }
+}
+
+function 多久之前(毫秒) {
+    var 分 = Math.floor((Date.now() - 毫秒) / 60000);
+    if (分 < 1) return "刚刚";
+    if (分 < 60) return 分 + " 分钟前";
+    var 时 = Math.floor(分 / 60);
+    if (时 < 24) return 时 + " 小时前";
+    return Math.floor(时 / 24) + " 天前";
+}
+
+function 画版本页() {
+    var 行分 = String.fromCharCode(10);
+    var 包版本 = "?", 包版本号 = "?";
+    try {
+        var 包 = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
+        包版本 = String(包.versionName); 包版本号 = String(包.versionCode);
+    } catch (e) {}
+    var 来源 = 读加载器偏好("本次来源", "") || "(没有加载器,可能是直接跑的脚本)";
+    var 何时 = "(还没查过)";
+    try {
+        var t = parseInt(读加载器偏好("上次查时间", "0"), 10);
+        if (t) 何时 = 时间戳(new Date(t)) + "  ·  " + 多久之前(t);
+    } catch (e) {}
+    var 文 = "应用      小菇爱表白" + 行分
+           + "包名      " + context.getPackageName() + 行分
+           + "安装包    " + 包版本 + "(versionCode " + 包版本号 + ")" + 行分 + 行分
+           + "脚本      " + 构建标记 + 行分
+           + "来源      " + 来源 + 行分 + 行分
+           + "上次检查  " + 何时 + 行分
+           + "结果      " + 读加载器偏好("上次查结果", "(还没查过)");
+    ui.run(function () {
+        ui.版本正文.setText(文);
+        ui.查更新说明.setText("每 6 小时自动查一次;点上面的按钮可以立刻查,不受这个限制。"
+                           + 行分 + "查到新版要重开 App(从最近任务划掉再打开)才生效。");
+    });
+}
+
+ui.看版本.on("click", function () { 当前页 = "版本"; 画版本页(); 刷新状态(); });
+ui.版本返回.on("click", function () { 当前页 = ""; 刷新状态(); });
+
+ui.查更新钮.on("click", function () {
+    if (typeof 加载 === "undefined" || !加载.开后台查更新) {
+        toast("这份脚本不是通过加载器跑的,没有更新功能");
+        return;
+    }
+    var 旧时间 = 读加载器偏好("上次查时间", "0");
+    ui.查更新说明.setText("正在检查…");
+    加载.开后台查更新();
+    /*
+     * ⚠️ 不能在这儿等结果 —— 查更新跑在后台线程,这里是 UI 线程,等就卡死界面。
+     *    改成轮询偏好:加载器查完会写新的时间戳,时间戳变了就说明有结论了。
+     */
+    var 次 = 0;
+    var 表 = setInterval(function () {
+        次++;
+        if (读加载器偏好("上次查时间", "0") !== 旧时间) {
+            clearInterval(表);
+            画版本页();
+            toast(读加载器偏好("上次查结果", ""));
+        } else if (次 > 40) {                 // 20 秒还没结论,当它超时
+            clearInterval(表);
+            ui.查更新说明.setText("检查超时,可能是网络不通,稍后再试。");
+        }
+    }, 500);
+});
+
 ui.看日志.on("click", function () { 去看日志(); });
 
 /*
@@ -658,7 +758,7 @@ ui.关于钮.on("click", function () {
         positive: "知道了"
     }).show();
 });
-ui.日志返回.on("click", function () { 在日志页 = false; 刷新状态(); });
+ui.日志返回.on("click", function () { 当前页 = ""; 刷新状态(); });
 ui.日志诊断.on("click", function () { 看诊断 = !看诊断; 画日志页(); });
 ui.日志清空.on("click", function () {
     dialogs.build({ title: "清空日志?", content: "只清记录,不影响已经签到的结果。",
@@ -959,7 +1059,7 @@ function 画日志页() {
 }
 
 function 去看日志() {
-    在日志页 = true;
+    当前页 = "日志";
     画日志页();
     刷新状态();
 }
