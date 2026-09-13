@@ -60,7 +60,7 @@ var 配置 = {
  *    我为此白改了好几轮,还有一次跑着旧脚本把当天 7 个角色的表白机会全用光了。
  *    现在启动日志第一行就报这个戳,跟 build.py 打印的对一下就知道装对没有。
  */
-var 构建标记 = "远程 2026.09.13.5";
+var 构建标记 = "远程 2026.09.13.6";
 
 /*
  * ── 用哪个腾讯视频 ──
@@ -193,7 +193,7 @@ function 记(s, 是诊断) {
 // ══════════════ 界面 ══════════════
 ui.layout(
     <vertical bg="#f2f2f5" h="*">
-        <text id="标题" text="每日签到" textSize="24sp" textStyle="bold" textColor="#1f1f1f" margin="20 24 20 14"/>
+        <text id="标题" text="每日表白" textSize="24sp" textStyle="bold" textColor="#1f1f1f" margin="20 24 20 14"/>
         {/*
           ⚠️ 闲置态必须能滚。原先整页不可滚,结果卡一出现就把最底下的「运行日志 ›」
              顶到屏幕外(实测最后一个节点正好压在导航栏上),那个入口就等于不存在。
@@ -256,7 +256,7 @@ ui.layout(
                      真检测到被挡(可能被受限设置挡())时自动展开一次,不用用户自己去猜。
                 */}
                 <vertical id="无障碍引导" visibility="gone" bg="#fdeceb" padding="14" margin="0 6 0 10">
-                    <text text="签到必须先开这个,不然读不到页面、也点不了按钮。"
+                    <text text="表白必须先开这个,不然读不到页面、也点不了按钮。"
                           textSize="13sp" textColor="#8a1c14"/>
                     <button id="去开无障碍钮" text="去开启无障碍" textSize="17sp" h="56"
                             margin="0 10 0 6" bg="#b3261e" textColor="#ffffff"/>
@@ -323,7 +323,7 @@ ui.layout(
               ⚠️ 曾经还有第三颗「开始切号(只切不签)」和「干跑」,是开发期用来省表白机会的,
                  链路验完就删了 —— 普通用户看见只会困惑。要干跑改 配置.干跑 即可。
             */}
-            <button id="切签钮" text="开始表白(全部账号)" textSize="16sp" h="52"
+            <button id="切签钮" text="开始表白(APP内切号)" textSize="16sp" h="52"
                     margin="0 0 0 10" bg="#174ea6" textColor="#ffffff"/>
 
             
@@ -778,7 +778,7 @@ function 刷新状态() {
         ui.控制条.setVisibility(跑着 ? 显 : 隐);
 
         if (跑着) {
-            ui.状态.setText((控制.暂停 ? "已暂停 " : "签到中 ") + 进度号
+            ui.状态.setText((控制.暂停 ? "已暂停 " : "表白中 ") + 进度号
                 + (进度名 ? " · " + 进度名 : ""));
             ui.状态.setTextColor(colors.parseColor(控制.暂停 ? "#8a5300" : "#12496b"));
             ui.状态.setBackgroundColor(colors.parseColor(控制.暂停 ? "#fff4e5" : "#e3f0f8"));
@@ -1018,7 +1018,7 @@ ui.看日志.on("click", function () { 去看日志(); });
 ui.日志返回.on("click", function () { 当前页 = ""; 刷新状态(); });
 ui.日志诊断.on("click", function () { 看诊断 = !看诊断; 画日志页(); });
 ui.日志清空.on("click", function () {
-    dialogs.build({ title: "清空日志?", content: "只清记录,不影响已经签到的结果。",
+    dialogs.build({ title: "清空日志?", content: "只清记录,不影响已经表白的结果。",
                     positive: "清空", negative: "算了" })
         .on("positive", function () {
             try { files.write(日志档, ""); } catch (e) {}
@@ -1101,7 +1101,7 @@ function 开跑(任务名, 任务) {
 ui.切签钮.on("click", function () {
     if (控制.跑着) return;
     if (!刷新状态()) { 去开无障碍(); return; }
-    开跑("全部账号", function () {
+    开跑("APP内切号", function () {
         // 切换列表里的每个号都切过去、各跑一轮表白。**真点**。
         跑全部账号(跑一轮);
     });
@@ -1368,7 +1368,7 @@ function 首次问通知() {
             title: "开启通知?",
             // 这里刻意不写反斜杠转义:改本文件的工具链会把转义吞成真换行,
             // 而 JS 字符串不能跨行 —— 脚本会解析失败、一打开就闪退(踩过)。
-            content: "跑完会把「新签几个、失败几个」发到通知栏。" +
+            content: "跑完会把「新表白几个、失败几个」发到通知栏。" +
                      String.fromCharCode(10) + String.fromCharCode(10) +
                      "下一页请打开「通知を許可 / 允许通知」,然后按返回键回来。",
             positive: "去开启",
@@ -1464,7 +1464,10 @@ function 建通知渠道() {
     try {
         var NM = context.getSystemService(android.content.Context.NOTIFICATION_SERVICE);
         NM.createNotificationChannel(new android.app.NotificationChannel(
-            通知渠道, "签到结果", android.app.NotificationManager.IMPORTANCE_DEFAULT));
+            // ⚠️ 改的是渠道**显示名**。渠道 id(通知渠道 = "checkin_result")是**存储键**,
+            //    绝对不能跟着文案改 —— 换了 id 等于建一个新渠道,用户之前对它做的设置
+            //    (关掉、静音、改重要性)全部作废,而且旧渠道还会留在系统设置里。
+            通知渠道, "表白结果", android.app.NotificationManager.IMPORTANCE_DEFAULT));
     } catch (e) {}
 }
 
@@ -1744,13 +1747,13 @@ function 签一个内部(角色) {
     if (!钮) return "失败:找不到表白按钮";
 
     if (钮.文案 === "已表白") {
-        记("  今天已签过,跳过");
+        记("  今天已表白过,跳过");
         return "已完成";
     }
 
     if (配置.干跑) {
         记("  【干跑】不点。按钮在 (" + 钮.框.centerX() + "," + 钮.框.centerY() + ")");
-        return "待签到";
+        return "待表白";
     }
     记("  点 (" + 钮.框.centerX() + "," + 钮.框.centerY() + ")");
     /*
@@ -1800,7 +1803,7 @@ function 签一个内部(角色) {
         }
         if (现文 === "已表白") {
             记("  ✅ 成功,点击后 " + 过了());
-            return "刚签到";
+            return "刚表白";
         }
         if (!BACK过 && 找可见(textContains("挑战")) !== null) {
             记("  +" + 过了() + " 弹出挑战面板,BACK 关掉");
@@ -1819,7 +1822,7 @@ function 签一个内部(角色) {
     var 再 = 找表白钮(8000);
     if (再 && 再.文案 === "已表白") {
         记("  ✅ 重进后确认「已表白」");
-        return "刚签到";
+        return "刚表白";
     }
     return "失败:点了但没变成「已表白」(现在是「" + (再 ? 再.文案 : "找不到按钮") + "」)";
 }
@@ -2065,18 +2068,18 @@ function 跑全部账号(每个号做的事) {
     上次结果 = 总摘要;
     try { if (偏好) 偏好.put("上次结果", 总摘要); } catch (e) {}
     回本应用();                               // 全部做完了,再把 App 切回前台
-    发结果通知("多账号签到完成", 总摘要);
+    发结果通知("多账号表白完成", 总摘要);
     toast(总摘要);
 }
 
 /** 跑一整轮:配置表里所有角色。在后台线程里跑。 */
 function 跑一轮() {
     本轮报过页面账号 = false;
-    记("=== 腾讯角色签到 " + 时间戳() + " ===");
+    记("=== 腾讯角色表白 " + 时间戳() + " ===");
 
 
     上一个指纹 = null;
-    var 统计 = { 刚签到: 0, 已完成: 0, 待签到: 0, 失败: 0 };
+    var 统计 = { 刚表白: 0, 已完成: 0, 待表白: 0, 失败: 0 };
     var 明细 = [];
     var 中止了 = false;
     var 做了几个 = 0;
@@ -2099,9 +2102,9 @@ function 跑一轮() {
             }
             明细.push(角色.名 + ": " + 结果);
             做了几个++;
-            if (结果 === "刚签到") 统计.刚签到++;
+            if (结果 === "刚表白") 统计.刚表白++;
             else if (结果 === "已完成") 统计.已完成++;
-            else if (结果 === "待签到") 统计.待签到++;
+            else if (结果 === "待表白") 统计.待表白++;
             else 统计.失败++;
             sleep(1500);
         }
@@ -2115,8 +2118,8 @@ function 跑一轮() {
     记("");
     记(中止了 ? "=== 汇总(中止)===" : "=== 汇总 ===");
     明细.forEach(function (s) { 记("  " + s); });
-    var 摘要 = (配置.干跑 ? "【干跑】待签到 " + 统计.待签到 + " · " : "新签 " + 统计.刚签到 + " · ")
-             + "本来就签过 " + 统计.已完成 + " · 失败 " + 统计.失败;
+    var 摘要 = (配置.干跑 ? "【干跑】待表白 " + 统计.待表白 + " · " : "新表白 " + 统计.刚表白 + " · ")
+             + "本来就表白过 " + 统计.已完成 + " · 失败 " + 统计.失败;
     if (中止了) 摘要 += " · 未做 " + (配置.角色.length - 做了几个);
     记(摘要);
 
@@ -2130,7 +2133,7 @@ function 跑一轮() {
     上次结果 = 摘要;
     try { if (偏好) 偏好.put("上次结果", 摘要); } catch (e) {}
     回本应用();
-    发结果通知(中止了 ? "签到已中止" : "签到完成", 摘要);
+    发结果通知(中止了 ? "表白已中止" : "表白完成", 摘要);
     toast(摘要);
 }
 
