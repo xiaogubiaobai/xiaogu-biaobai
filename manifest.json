@@ -1,9 +1,9 @@
 {
   "脚本": {
-    "版本": "2026.09.13.22",
+    "版本": "2026.09.13.23",
     "地址": "https://raw.githubusercontent.com/xiaogubiaobai/xiaogu-biaobai/main/checkin.js",
-    "sha256": "eb634f1566e63924388adb998caca235dc31534e6e5d69b950dc57cd93e6f534",
-    "说明": "重打 APK:内置脚本跟上今天的界面,新用户第一次打开就是新版"
+    "sha256": "7cc269bd971590ebd03d20640760790c44565d5a51ca4ddf2b2f88845b1654a0",
+    "说明": "文档:APK 0.1.5、安装说明页、重打 APK 的规矩"
   },
   "APK": {
     "最低版本号": 6,
@@ -12,5 +12,5 @@
     "地址": "https://github.com/xiaogubiaobai/xiaogu-biaobai/releases/download/v0.1.5/xiaogu-biaobai-0.1.5.apk",
     "sha256": "ca6b05ce85950404a5f7d6581c1afa049ddeb0ebd075452f78c44e9d2637f4fd"
   },
-  "更新时间": "2026/09/13 13:08"
+  "更新时间": "2026/09/13 13:37"
 }
