@@ -1,0 +1,120 @@
+# 把公开仓镜像到 Gitee(国内线路)。
+#
+# 为什么要它:raw.githubusercontent.com 在国内基本连不上,而 56 MB 的 APK
+# 从家用宽带上行传 Gitee 要十分钟。放这里跑 = 机房对机房,本地什么都不用传。
+#
+# ⚠️ 它**不碰签名密钥**。APK 是在本机打包并签名、发到 GitHub Release 的,
+#    这里只做「下载已签好的成品 → 上传」。keystore 一步都不用离开本机。
+name: mirror-to-gitee
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - checkin.js
+      - manifest.json
+      - manifest.gitee.json
+      - index.html
+  release:
+    types: [published]
+  workflow_dispatch:
+
+concurrency:
+  group: mirror-to-gitee
+  cancel-in-progress: false
+
+env:
+  GITEE_OWNER: flyten1129
+  GITEE_REPO: xiaogu-biaobai
+  APK_NAME: xiaogu-biaobai.apk
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 推文件到 Gitee
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$GITEE_TOKEN" || { echo "没设 GITEE_TOKEN secret"; exit 1; }
+          git clone -q --depth 1 -b master \
+            "https://oauth2:${GITEE_TOKEN}@gitee.com/${GITEE_OWNER}/${GITEE_REPO}.git" gt
+          cp checkin.js index.html gt/
+          # ⚠️ 镜像那份清单由 release.py 生成(地址常量只在那儿定义一次),
+          #    这里只是改个名照抄,不做任何改写。
+          cp manifest.gitee.json gt/manifest.json
+          cd gt
+          git config user.name  "小菇爱表白"
+          git config user.email "noreply@xiaogu-biaobai.invalid"
+          git add -A
+          # ⚠️ 不能写成 `git diff --quiet && exit 0` —— 有改动时 diff 返回 1,
+          #    在 set -e 下会把整步判成失败。用 if 才对。
+          if git diff --cached --quiet; then
+            echo "内容没变,跳过"
+          else
+            git commit -q -m "镜像 ${GITHUB_SHA:0:7}"
+            git push -q origin master
+            echo "已推"
+          fi
+
+      - name: 搬 APK 到 Gitee Release
+        if: github.event_name == 'release'
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+          RELNAME: ${{ github.event.release.name }}
+          RELBODY: ${{ github.event.release.body }}
+        run: |
+          set -euo pipefail
+          API="https://gitee.com/api/v5/repos/${GITEE_OWNER}/${GITEE_REPO}"
+
+          echo "── 从 GitHub Release 取已签名的 APK ──"
+          curl -sSL --retry 3 -o apk.apk \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${APK_NAME}"
+          SIZE=$(stat -c%s apk.apk)
+          echo "大小 ${SIZE}  sha256 $(sha256sum apk.apk | cut -c1-16)…"
+          # 下歪了(拿到 404 页面)就别往上传
+          test "$SIZE" -gt 1000000 || { echo "下下来的东西太小,八成不是 APK"; exit 1; }
+
+          echo "── 找/建同 tag 的 Gitee Release ──"
+          RID=$(curl -sS "${API}/releases?access_token=${GITEE_TOKEN}&per_page=100" \
+                | jq -r --arg t "$TAG" '.[] | select(.tag_name==$t) | .id' | head -1)
+          if [ -z "$RID" ]; then
+            # ⚠️ 必须显式声明 charset=utf-8。不声明的话 Gitee 会按别的编码解,
+            #    中文标题直接变乱码 —— 踩过。
+            RID=$(curl -sS -X POST "${API}/releases" \
+              -H "Content-Type: application/x-www-form-urlencoded; charset=utf-8" \
+              --data-urlencode "access_token=${GITEE_TOKEN}" \
+              --data-urlencode "tag_name=${TAG}" \
+              --data-urlencode "name=${RELNAME}" \
+              --data-urlencode "body=${RELBODY}" \
+              --data-urlencode "target_commitish=master" | jq -r '.id')
+            echo "新建了 $RID"
+          else
+            echo "复用已有的 $RID"
+          fi
+          test -n "$RID" -a "$RID" != "null" || { echo "拿不到 release id"; exit 1; }
+
+          echo "── 同名旧附件先删掉,免得一版挂两份 56MB ──"
+          for i in $(curl -sS "${API}/releases/${RID}/attach_files?access_token=${GITEE_TOKEN}" \
+                     | jq -r --arg n "$APK_NAME" '.[]? | select(.name==$n) | .id'); do
+            curl -sS -X DELETE "${API}/releases/${RID}/attach_files/${i}?access_token=${GITEE_TOKEN}" >/dev/null || true
+            echo "删了旧附件 $i"
+          done
+
+          echo "── 上传 ──"
+          curl -sS -X POST "${API}/releases/${RID}/attach_files" \
+            -F "access_token=${GITEE_TOKEN}" -F "file=@apk.apk" \
+            | jq -r '.browser_download_url // .'
+
+      - name: 回验固定直链
+        if: github.event_name == 'release'
+        run: |
+          set -euo pipefail
+          U="https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/releases/download/latest/${APK_NAME}"
+          # ⚠️ Gitee 的段序跟 GitHub 相反:GitHub 是 /releases/latest/download/<文件名>。
+          echo "$U"
+          curl -sI -L --max-time 60 -o /dev/null -w "HTTP %{http_code}\n" "$U"
