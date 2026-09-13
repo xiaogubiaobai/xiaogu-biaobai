@@ -60,7 +60,7 @@ var 配置 = {
  *    我为此白改了好几轮,还有一次跑着旧脚本把当天 7 个角色的表白机会全用光了。
  *    现在启动日志第一行就报这个戳,跟 build.py 打印的对一下就知道装对没有。
  */
-var 构建标记 = "远程 2026.09.13.23";
+var 构建标记 = "远程 2026.09.13.24";
 
 /*
  * ── 用哪个腾讯视频 ──
@@ -1775,11 +1775,47 @@ function 发结果通知(标题, 正文) {
     }
 }
 
-/** 深链:直接跳到某个页面,不用一层层点进去 */
+/*
+ * 深链:直接跳到某个页面,不用一层层点进去。
+ *
+ * ⚠️⚠️ **必须 setComponent,光 setPackage 不够。**
+ *    用户实拍:每跳一次角色页就弹一次「选择要使用的应用」,里面两个一模一样的腾讯视频图标。
+ *    原因是**三星/小米那类「双开」克隆的包名跟本尊一样**(都是 com.tencent.qqlive),
+ *    只是住在另一个 Android 用户里 —— `setPackage` 只钉包名,两边都匹配,
+ *    系统就弹跨用户选择器(跟工作资料那个「个人/工作」选择器是同一套东西)。
+ *    钉到**具体 Activity 类名**才唯一:显式组件只会在**调用方自己的用户**里启动,
+ *    跨用户要 INTERACT_ACROSS_USERS(系统权限),所以选择器没有理由出现。
+ *    顺带也挡住了「真的装了两个不同包名的腾讯」那种选择框。
+ * ⚠️ 组件名要**问系统要**(resolveActivity),不能写死 —— 腾讯改版换过 Activity 名。
+ *    解析失败就退回只 setPackage,至少还能跑(可能弹框,但不会不动)。
+ */
+var 深链组件 = {};      // 包名 → ComponentName,一个包只解析一次
+
+function 取深链组件(url) {
+    if (深链组件[腾讯包]) return 深链组件[腾讯包];
+    try {
+        var 探 = new android.content.Intent(android.content.Intent.ACTION_VIEW,
+            android.net.Uri.parse(url));
+        探.setPackage(腾讯包);
+        var ri = context.getPackageManager().resolveActivity(探, 0);
+        if (ri && ri.activityInfo) {
+            var cn = new android.content.ComponentName(
+                ri.activityInfo.packageName, ri.activityInfo.name);
+            深链组件[腾讯包] = cn;
+            诊("深链组件:" + cn.flattenToShortString());
+            return cn;
+        }
+        诊("深链组件:解析不出来,退回只钉包名");
+    } catch (e) { 诊("解析深链组件出错:" + e); }
+    return null;
+}
+
 function 开深链(url) {
     var it = new android.content.Intent(android.content.Intent.ACTION_VIEW,
         android.net.Uri.parse(url));
     it.setPackage(腾讯包);
+    var cn = 取深链组件(url);
+    if (cn) it.setComponent(cn);
     it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
     context.startActivity(it);
 }
