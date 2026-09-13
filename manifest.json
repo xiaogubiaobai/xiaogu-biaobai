@@ -1,16 +1,16 @@
 {
   "脚本": {
-    "版本": "2026.09.13.24",
+    "版本": "2026.09.13.25",
     "地址": "https://raw.githubusercontent.com/xiaogubiaobai/xiaogu-biaobai/main/checkin.js",
-    "sha256": "19ac98e32e23b6ba917c0646120d14fdf507d6b4428a5ba13f2ebb0faf1ccf65",
-    "说明": "深链改成钉 Activity 组件,修双开手机每跳一页就弹选择框"
+    "sha256": "b87febc0dce6ad069bd19afa3e0397b9e6793a0e4f2a3248f6347a71f661f892",
+    "说明": "多操作对象:设置里可多选、依次跑完;那一行放在跑完发通知下面"
   },
   "APK": {
     "最低版本号": 6,
     "最新版本号": 6,
     "最新版本名": "0.1.5",
     "地址": "https://github.com/xiaogubiaobai/xiaogu-biaobai/releases/download/v0.1.5/xiaogu-biaobai-0.1.5.apk",
-    "sha256": "7a2bf87a39cbd469f0df3fad55b4d4bd678755570374034a90d94f11f4266a40"
+    "sha256": "9792a8a1a2e97c4f5702ef744b4814a35fb946b6574e17d075d3b203ea0d78a6"
   },
-  "更新时间": "2026/09/13 14:21"
+  "更新时间": "2026/09/13 16:27"
 }
