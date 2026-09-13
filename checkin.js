@@ -60,7 +60,7 @@ var 配置 = {
  *    我为此白改了好几轮,还有一次跑着旧脚本把当天 7 个角色的表白机会全用光了。
  *    现在启动日志第一行就报这个戳,跟 build.py 打印的对一下就知道装对没有。
  */
-var 构建标记 = "远程 2026.09.13.18";
+var 构建标记 = "远程 2026.09.13.19";
 
 /*
  * ── 用哪个腾讯视频 ──
@@ -369,9 +369,9 @@ ui.layout(
                 「开始」和「暂停/继续」不会同时有意义。*/}
             <horizontal id="控制条" visibility="gone" margin="0 18 0 6">
                 <button id="暂停钮" text="暂停" textSize="18sp" h="60" layout_weight="1"
-                        bg="#f57c00" textColor="#ffffff"/>
+                        bg="#fdeaf1" textColor="#c2185b"/>
                 <button id="停止钮" text="停止" textSize="18sp" h="60" layout_weight="1"
-                        margin="10 0 0 0" bg="#b3261e" textColor="#ffffff"/>
+                        margin="10 0 0 0" bg="#5f6368" textColor="#ffffff"/>
             </horizontal>
             {/*
               实时明细。⚠️ 只在**跑的时候**显示 —— 常驻的话跟日志页完全重复,
@@ -642,7 +642,7 @@ var 控制条常位 = 0.45;
 var 账号进度 = "", 账号名显示 = "";
 // ⚠️ 尺寸写成常量:布局、setSize、挪位置三处都要用同一组数,各写各的迟早对不上
 //    (悬浮窗的大小是创建那一刻按内容量的,setSize 比内容小就会裁掉一截)。
-var 条宽dp = 104, 条高dp = 198, 条缩dp = 6;
+var 条宽dp = 94, 条高dp = 198, 条缩dp = 6;
 
 function 挪控制条(高比例) {
     if (!控制条) return;
@@ -673,24 +673,24 @@ function 开控制条() {
                      而且正好撞上切进腾讯 App 那一下,看着像是哪里没改干净。
                      摆好、上妆完再 setVisibility(VISIBLE)。
                 */}
-                <vertical id="盒" bg="#f5202124" padding="10" gravity="center"
+                <vertical id="盒" bg="#f5202124" padding="9" gravity="center"
                           visibility="invisible">
                     {/* 上半:在第几个号、哪个号。下半:这个号做到第几个角色 */}
                     <text id="号" text="" textColor="#bdc1c6" textSize="9sp"
-                          w="84" h="34" gravity="center"/>
+                          w="76" h="34" gravity="center"/>
                     <text h="1" bg="#40ffffff" margin="0 3 0 7"/>
                     <text id="字" text="准备中" textColor="#ffffff" textSize="10sp"
-                          w="84" h="40" gravity="center"/>
+                          w="76" h="40" gravity="center"/>
                     {/*
                       ⚠️ 按钮必须 padding="0" 并且给够高。系统 Button 自带 minHeight 48dp
                          和上下 padding,你把 h 压到 32 的话文字被排到可见区外面,
                          **上下各卡掉一截** —— 实测就是「暂停」显示成「斩信」。
                          缩小的时候行高要跟着字号一起算,不能只改一头。
                     */}
-                    <button id="暂" text="暂停" w="84" h="42" textSize="11sp" padding="0"
-                            bg="#f57c00" textColor="#ffffff"/>
-                    <button id="停" text="停止" w="84" h="42" textSize="11sp" padding="0"
-                            margin="0 6 0 0" bg="#e5484d" textColor="#ffffff"/>
+                    <button id="暂" text="暂停" w="76" h="42" textSize="11sp" padding="0"
+                            bg="#fdeaf1" textColor="#c2185b"/>
+                    <button id="停" text="停止" w="76" h="42" textSize="11sp" padding="0"
+                            margin="0 6 0 0" bg="#5f6368" textColor="#ffffff"/>
                 </vertical>
             </frame>);
         /*
@@ -711,7 +711,7 @@ function 开控制条() {
             try {
                 // dp → px 自己算,别写死像素 —— 不同机器密度不一样
                 var 密 = context.getResources().getDisplayMetrics().density;
-                // 内容 84 宽 + 左右各 10 padding = 104
+                // 内容 76 宽 + 左右各 9 padding = 94(用户觉得 104 稍宽)
                 // 高 34 + (1+3+7 分隔线) + 40 + 42 + 6 + 42 + 上下 20 = 195,给到 198 留余量
                 var 宽 = Math.round(条宽dp * 密), 高 = Math.round(条高dp * 密);
                 控制条.setSize(宽, 高);
@@ -731,9 +731,10 @@ function 开控制条() {
                 玻璃.setCornerRadius(14 * 屏幕密度);
                 控制条.盒.setBackground(玻璃);
                 // 胶囊(圆角 = 高度一半)。深卡上用浅色按钮更清楚,停止保留红色语义。
-                装按钮(控制条.暂, 暂停色, "#ffffff", 白纹, 16);
-                条暂色 = 暂停色;
-                装按钮(控制条.停, 停止色, "#ffffff", 白纹, 16);
+                var 初 = 暂停配色();
+                装按钮(控制条.暂, 初.底, 初.字, 初.纹, 16);
+                条暂色 = 初.底;
+                装按钮(控制条.停, 中性深, "#ffffff", 白纹, 16);
                 控制条.盒.setVisibility(android.view.View.VISIBLE);   // 摆好上妆完,现在才露脸
             } catch (e) { 诊("(悬浮条上妆失败:" + e + ")"); }
             try {
@@ -832,8 +833,17 @@ var 中性深 = "#5f6368";   // 次要入口用的中性深灰
  * 跑动时那两个动作的颜色。**界面上的大按钮和悬浮条上的小按钮必须是同一套** ——
  * 同一个动作在两个地方长得不一样,用户会以为是两回事(原先界面是橙/深红,
  * 悬浮条是白/亮红,是两套)。颜色按**状态**走,不按位置走。
+ *
+ * ⚠️ 全部收进 App 的粉色基调。一度做成橙/绿/红那种「红绿灯」配色,跟粉色主调打架 ——
+ *    用户原话:「上一版粉色基调的比较好。」
+ * ⚠️ 「停止」用**中性深灰**,不用红:它其实不危险(只是结束这一轮,不删东西),
+ *    用红色喊没道理;而且红挨着粉很闷。灰色跟「版本信息/运行日志」那两个入口同色,
+ *    整页只剩粉 + 灰两个调子。
  */
-var 暂停色 = "#f57c00", 继续色 = "#1e8e3e", 停止色 = "#e5484d";
+function 暂停配色() {
+    return 控制.暂停 ? { 底: "#e8437c", 字: "#ffffff", 纹: 白纹 }   // 继续:粉实心
+                     : { 底: 粉浅,      字: 粉深,      纹: 粉纹 };  // 暂停:淡粉底深粉字
+}
 
 function 美化按钮() {
     // 主功能(切号)用 logo 的渐层粉;次要那颗同色系浅底深字 —— 层级靠填充方式,不靠换颜色
@@ -846,7 +856,7 @@ function 美化按钮() {
     //    不是装饰。全刷成粉色就分不出「这一步有风险」了。
     装按钮(ui.去开无障碍钮, "#b3261e", "#ffffff", 白纹);
     装按钮(ui.受限钮,     "#f57c00", "#ffffff", 白纹);
-    装按钮(ui.停止钮,     停止色,   "#ffffff", 白纹);
+    装按钮(ui.停止钮,     中性深,   "#ffffff", 白纹);
     装按钮(ui.装新包钮,   "#1e8e3e", "#ffffff", 白纹);
     /*
      * 两个入口用**中性深灰**,不用粉、也不用蓝。
@@ -879,8 +889,11 @@ function 刷新状态() {
                 控制条.字.setText(条文);
                 控制条.号.setText(号文);
                 控制条.暂.setText(控制.暂停 ? "继续" : "暂停");
-                var 条色 = 控制.暂停 ? 继续色 : 暂停色;
-                if (条色 !== 条暂色) { 条暂色 = 条色; 装按钮(控制条.暂, 条色, "#ffffff", 白纹, 16); }
+                var 条配 = 暂停配色();
+                if (条配.底 !== 条暂色) {
+                    条暂色 = 条配.底;
+                    装按钮(控制条.暂, 条配.底, 条配.字, 条配.纹, 16);
+                }
             } catch (e) {
                 if (++条错次数 === 8) 诊("(悬浮条一直更新不了:" + e + ")");
             }
@@ -974,8 +987,11 @@ function 刷新状态() {
                 ui.状态.setBackground(面);       // ⚠️ 不能用 setBackgroundColor,那会把圆角冲掉
             }
             ui.暂停钮.setText(控制.暂停 ? "继续" : "暂停");
-            var 暂色 = 控制.暂停 ? 继续色 : 暂停色;
-            if (暂色 !== 暂停钮色) { 暂停钮色 = 暂色; 装按钮(ui.暂停钮, 暂色, "#ffffff", 白纹); }
+            var 配 = 暂停配色();
+            if (配.底 !== 暂停钮色) {
+                暂停钮色 = 配.底;
+                装按钮(ui.暂停钮, 配.底, 配.字, 配.纹);
+            }
         }
         ui.主钮.setText("开始表白(单号)");
     });
