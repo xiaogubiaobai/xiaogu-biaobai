@@ -19,8 +19,11 @@ on:
     types: [published]
   workflow_dispatch:
 
+# ⚠️ 并发组必须带上事件名。踩过:发 0.1.7 时 push 和 release 同时触发,
+#    同组里只能有一个 run 在排队,后到的 push 把**排队中的 release 挤掉了** ——
+#    而 release 那次才是搬 APK 的,结果 APK 没上 Gitee,工作流还一片绿。
 concurrency:
-  group: mirror-to-gitee
+  group: mirror-to-gitee-${{ github.event_name }}
   cancel-in-progress: false
 
 env:
@@ -61,15 +64,25 @@ jobs:
           fi
 
       - name: 搬 APK 到 Gitee Release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.release.tag_name }}
           RELNAME: ${{ github.event.release.name }}
           RELBODY: ${{ github.event.release.body }}
         run: |
           set -euo pipefail
           API="https://gitee.com/api/v5/repos/${GITEE_OWNER}/${GITEE_REPO}"
+
+          # 手动触发时没有 release 上下文,自己去查最新那个
+          if [ -z "${TAG:-}" ]; then
+            J=$(curl -sS -H "Authorization: token ${GITHUB_TOKEN}"                 "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest")
+            TAG=$(echo "$J" | jq -r '.tag_name')
+            RELNAME=$(echo "$J" | jq -r '.name // .tag_name')
+            RELBODY=$(echo "$J" | jq -r '.body // ""')
+            echo "手动触发,用最新 Release:$TAG"
+          fi
 
           echo "── 从 GitHub Release 取已签名的 APK ──"
           curl -sSL --retry 3 -o apk.apk \
@@ -111,7 +124,7 @@ jobs:
             | jq -r '.browser_download_url // .'
 
       - name: 回验固定直链
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
         run: |
           set -euo pipefail
           U="https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/releases/download/latest/${APK_NAME}"
