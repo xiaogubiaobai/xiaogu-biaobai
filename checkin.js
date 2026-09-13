@@ -60,7 +60,7 @@ var 配置 = {
  *    我为此白改了好几轮,还有一次跑着旧脚本把当天 7 个角色的表白机会全用光了。
  *    现在启动日志第一行就报这个戳,跟 build.py 打印的对一下就知道装对没有。
  */
-var 构建标记 = "远程 2026.09.13.25";
+var 构建标记 = "远程 2026.09.13.26";
 
 /*
  * ── 用哪个腾讯视频 ──
@@ -1933,6 +1933,7 @@ function 开深链(url) {
     it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
     context.startActivity(it);
 }
+
 
 /*
  * 先把腾讯视频叫到它**自己的首页**,再发深链。
