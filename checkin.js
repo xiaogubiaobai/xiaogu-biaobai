@@ -60,7 +60,7 @@ var 配置 = {
  *    我为此白改了好几轮,还有一次跑着旧脚本把当天 7 个角色的表白机会全用光了。
  *    现在启动日志第一行就报这个戳,跟 build.py 打印的对一下就知道装对没有。
  */
-var 构建标记 = "远程 2026.09.13.20";
+var 构建标记 = "远程 2026.09.13.21";
 
 /*
  * ── 用哪个腾讯视频 ──
@@ -436,6 +436,8 @@ var 进度名 = "";     // 「陆小凤」;暂停时是「下一个要做的那�
 // 中止用「抛一个哨兵对象」实现,好跟真正的异常区分开 —— 不然用户按停止会被
 // 当成脚本出错记进日志。
 var 中止信号 = { 用户中止: true };
+// 一轮里只清一次腾讯的页面栈 —— 清不好就是别的原因,再清也没用,只会白等
+var 已重置过 = false;
 
 /**
  * 可中断点。
@@ -1298,6 +1300,14 @@ function 开跑(任务名, 任务) {
             诊("操作对象:" + (这个 ? 这个.名字 + " " + 这个.版本 : "?") + "(" + 腾讯包 + ")"
                + (候选.length > 1 ? ",另有 " + (候选.length - 1) + " 个候选" : ""));
 
+            /*
+             * ⚠️ 发任何深链之前,先把腾讯叫到它自己的首页 —— 理由见 唤醒腾讯() 那段注释:
+             *    不这么做的话,深链页会变成腾讯任务栈的根,用户以后点图标打开的就是那一页
+             *    (实测白屏,像 App 坏了)。这一步是**每轮开头做一次**,不是每次深链都做。
+             */
+            已重置过 = false;
+            if (!唤醒腾讯()) 记("  (腾讯视频没能切到前台,继续试)");
+
             任务();
         }
         catch (e) {
@@ -1637,7 +1647,30 @@ function 本应用界面Intent() {
               | android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP);
     return it;
 }
+/*
+ * 跑完把腾讯留在**它自己的首页**,再切回本应用。
+ *
+ * ⚠️⚠️ 为什么要多这一步:实测角色页(`TopicFeedsPageActivity`)**被切走再恢复会白屏** ——
+ *    这是腾讯自己的毛病,按一下返回键就正常。可是如果我们跑完就把它丢在角色页上,
+ *    用户下次点桌面图标恢复的正是那一页,看到的就是白屏,会以为「腾讯视频打不开了」。
+ *    实测过:同一台机器,停在角色页 → 点图标白屏,按一下返回 → 首页立刻正常。
+ *    所以我们替他按这一下。用 CLEAR_TOP 把首页上面那些页面收掉,等价于连按返回。
+ * ⚠️ 跟 唤醒腾讯() 是一对:一个保证**任务的根**是首页,一个保证**离开时停在**首页。
+ *    少任何一个,用户都会在某个时机撞上白屏。
+ */
+function 送腾讯回首页() {
+    try {
+        var it = context.getPackageManager().getLaunchIntentForPackage(腾讯包);
+        if (!it) return;
+        it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                  | android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        context.startActivity(it);
+        sleep(1200);
+    } catch (e) { 诊("送腾讯回首页出错:" + e); }
+}
+
 function 回本应用() {
+    送腾讯回首页();          // ⚠️ 必须在切回自己之前,不然腾讯就停在角色页上了
     try { context.startActivity(本应用界面Intent()); } catch (e) {}
 }
 
@@ -1749,6 +1782,45 @@ function 开深链(url) {
     it.setPackage(腾讯包);
     it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
     context.startActivity(it);
+}
+
+/*
+ * 先把腾讯视频叫到它**自己的首页**,再发深链。
+ *
+ * ⚠️⚠️ 这一步是**必须的,不是保险**。深链带 FLAG_ACTIVITY_NEW_TASK:腾讯当时要是没有任务栈
+ *    (刚开机、被清理掉、被划掉),被深链拉起来的那一页就成了它整个任务的**根**。
+ *    之后用户点桌面图标,系统去恢复这个任务,恢复出来的就是那一页 ——
+ *    **实测切号页单独当根时渲染不出来,表现为白屏、腾讯视频「打不开」**,
+ *    而且任务栈是持久的,重开手机也还在。用户原话:「腾讯 APP 似乎又唤不开了。」
+ *    先用启动器 Intent 把首页顶成根,深链再叠在上面,就跟人手点进去完全一样。
+ * ⚠️ 腾讯已经在跑的话,这一步只是把它切到前台,不花时间;冷启动那几秒本来也躲不掉。
+ */
+function 唤醒腾讯(超时毫秒) {
+    try {
+        var it = context.getPackageManager().getLaunchIntentForPackage(腾讯包);
+        if (!it) { 诊("唤醒腾讯:拿不到启动 Intent"); return false; }
+        it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+        context.startActivity(it);
+    } catch (e) { 诊("唤醒腾讯出错:" + e); return false; }
+    return 等到前台(腾讯包, 超时毫秒 || 15000);
+}
+
+/*
+ * 腾讯卡住时的补救:把它的页面栈整个清掉,以首页为根重开。
+ * ⚠️ 用 CLEAR_TASK 而不是 force-stop —— 普通应用没有停止别人进程的权限。
+ *    清栈能治「根是一张打不开的页面」这种状态,这正是上面那个坑留下的烂摊子。
+ */
+function 重置腾讯() {
+    记("  腾讯视频没反应,清掉它的页面栈重开一次…");
+    try {
+        var it = context.getPackageManager().getLaunchIntentForPackage(腾讯包);
+        if (!it) return false;
+        it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                  | android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        context.startActivity(it);
+    } catch (e) { 诊("重置腾讯出错:" + e); return false; }
+    sleep(2000);
+    return 等到前台(腾讯包, 15000);
 }
 
 function 等到前台(包名, 超时毫秒) {
@@ -2101,6 +2173,14 @@ function 开切号面板(超时毫秒) {
         }
         if (找可见(text("切换账号")) !== null && 找可见(text("当前登录")) !== null) return true;
         sleep(300);
+    }
+    // ⚠️ 超时别直接放弃:多半是腾讯的页面栈坏了(见 唤醒腾讯 那段)。清栈重开再试一轮。
+    if (!已重置过) {
+        已重置过 = true;
+        if (重置腾讯()) {
+            sleep(1500);
+            return 开切号面板(超时毫秒);
+        }
     }
     return false;
 }
