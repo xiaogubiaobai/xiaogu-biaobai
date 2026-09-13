@@ -1,16 +1,16 @@
 {
   "脚本": {
-    "版本": "2026.09.13.18",
+    "版本": "2026.09.13.19",
     "地址": "https://raw.githubusercontent.com/xiaogubiaobai/xiaogu-biaobai/main/checkin.js",
-    "sha256": "e4d78e6f227a4f8d139bff012075b92d89e4cfdcf5bd5a2e9fc7450f0dace11a",
-    "说明": "跑动卡与悬浮条统一:同内容同配色,状态条改粉色圆角"
+    "sha256": "95758378b51a1b0721489ebe9e704435055b5786663259d8404e51fecd28c209",
+    "说明": "跑动配色改成粉色基调(A案),停止改中性灰;悬浮条收窄到94dp"
   },
   "APK": {
     "最低版本号": 5,
     "最新版本号": 5,
     "最新版本名": "0.1.4",
     "地址": "https://github.com/xiaogubiaobai/xiaogu-biaobai/releases/download/v0.1.4/xiaogu-biaobai-0.1.4.apk",
-    "sha256": "f4d2d8a1bc8896c726b71c01efece631ad8c8e9c3daba0e69d8d1f5556527f70"
+    "sha256": "84c648cec78969c6ec7d3360171605c0b6726e299fa897ff525e7be56f3f5e85"
   },
-  "更新时间": "2026/09/13 10:11"
+  "更新时间": "2026/09/13 10:20"
 }
