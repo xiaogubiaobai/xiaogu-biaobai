@@ -84,11 +84,14 @@ jobs:
             echo "手动触发,用最新 Release:$TAG"
           fi
 
+          # ⚠️ 必须下成**最终文件名**:Gitee 用上传时的文件名给附件命名。
+          #    存成 apk.apk 的话 /releases/download/latest/<APK_NAME> 直接 404 ——
+          #    而且 0.1.7 那次就这么发出去了,回验步骤还报了成功(见下)。
           echo "── 从 GitHub Release 取已签名的 APK ──"
-          curl -sSL --retry 3 -o apk.apk \
+          curl -sSL --retry 3 -o "${APK_NAME}" \
             "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${APK_NAME}"
-          SIZE=$(stat -c%s apk.apk)
-          echo "大小 ${SIZE}  sha256 $(sha256sum apk.apk | cut -c1-16)…"
+          SIZE=$(stat -c%s "${APK_NAME}")
+          echo "大小 ${SIZE}  sha256 $(sha256sum "${APK_NAME}" | cut -c1-16)…"
           # 下歪了(拿到 404 页面)就别往上传
           test "$SIZE" -gt 1000000 || { echo "下下来的东西太小,八成不是 APK"; exit 1; }
 
@@ -118,9 +121,11 @@ jobs:
             echo "删了旧附件 $i"
           done
 
+          echo "SIZE_KEEP=${SIZE}" >> "$GITHUB_ENV"
+
           echo "── 上传 ──"
           curl -sS -X POST "${API}/releases/${RID}/attach_files" \
-            -F "access_token=${GITEE_TOKEN}" -F "file=@apk.apk" \
+            -F "access_token=${GITEE_TOKEN}" -F "file=@${APK_NAME}" \
             | jq -r '.browser_download_url // .'
 
       - name: 回验固定直链
@@ -130,4 +135,12 @@ jobs:
           U="https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/releases/download/latest/${APK_NAME}"
           # ⚠️ Gitee 的段序跟 GitHub 相反:GitHub 是 /releases/latest/download/<文件名>。
           echo "$U"
-          curl -sI -L --max-time 60 -o /dev/null -w "HTTP %{http_code}\n" "$U"
+          # ⚠️ 必须**判定**。上一版只 echo 状态码,结果附件名错了、链接 404,
+          #    工作流照样一片绿 —— 等于没验。
+          CODE=$(curl -sI -L --max-time 120 -o /dev/null -w "%{http_code}" "$U")
+          echo "HTTP ${CODE}"
+          test "$CODE" = "200" || { echo "固定直链拿不到 200"; exit 1; }
+          curl -sL --max-time 300 -o v.bin "$U"
+          VS=$(stat -c%s v.bin)
+          echo "回验下到 ${VS} 字节,头两字节 $(head -c2 v.bin | xxd -p)"
+          test "$VS" = "$SIZE_KEEP" || { echo "大小跟刚传的对不上(${SIZE_KEEP})"; exit 1; }
