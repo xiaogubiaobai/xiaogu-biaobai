@@ -60,7 +60,7 @@ var 配置 = {
  *    我为此白改了好几轮,还有一次跑着旧脚本把当天 7 个角色的表白机会全用光了。
  *    现在启动日志第一行就报这个戳,跟 build.py 打印的对一下就知道装对没有。
  */
-var 构建标记 = "远程 2026.09.13.12";
+var 构建标记 = "远程 2026.09.13.13";
 
 /*
  * ── 用哪个腾讯视频 ──
@@ -623,13 +623,13 @@ function 开控制条() {
          */
         控制条 = floaty.rawWindow(
             <frame>
-                <vertical bg="#5c000000" padding="6" gravity="center">
+                <vertical id="盒" bg="#f5202124" padding="10" gravity="center">
                     <text id="字" text="准备中" textColor="#ffffff" textSize="11sp"
                           w="88" h="42" gravity="center"/>
-                    <button id="暂" text="暂停" w="88" h="42" textSize="12sp"
-                            bg="#b3f57c00" textColor="#ffffff"/>
-                    <button id="停" text="停止" w="88" h="42" textSize="12sp"
-                            margin="0 6 0 0" bg="#b3b3261e" textColor="#ffffff"/>
+                    <button id="暂" text="暂停" w="88" h="40" textSize="12sp"
+                            bg="#f1f3f4" textColor="#202124"/>
+                    <button id="停" text="停止" w="88" h="40" textSize="12sp"
+                            margin="0 8 0 0" bg="#e5484d" textColor="#ffffff"/>
                 </vertical>
             </frame>);
         /*
@@ -650,12 +650,30 @@ function 开控制条() {
             try {
                 // dp → px 自己算,别写死像素 —— 不同机器密度不一样
                 var 密 = context.getResources().getDisplayMetrics().density;
-                var 宽 = Math.round(100 * 密), 高 = Math.round(150 * 密);
+                // 内容 88 宽 + 左右各 10 padding = 108;高 42+40+8+40 + 上下 20 = 150
+                var 宽 = Math.round(110 * 密), 高 = Math.round(154 * 密);
                 控制条.setSize(宽, 高);
                 // 贴右边缘、竖向放在 45% 高度处。
                 // 表白按钮实测在 y≈328~370,这里从 y≈0.45*屏高 才开始,隔得很开。
-                控制条.setPosition(device.width - 宽, Math.round(device.height * 0.45));
+                // 往里缩一点,不要贴死屏幕右缘 —— 贴死了圆角就白做了
+                var 缩 = Math.round(8 * 密);
+                控制条.setPosition(device.width - 宽 - 缩, Math.round(device.height * 0.45));
             } catch (e) {}
+            /*
+             * 上妆。⚠️ 跟主界面一样,圆角写不进布局(bg 只吃颜色),得建 drawable 塞进去;
+             *    而这里**必须放在 setTimeout 里** —— attach 之前 控制条.盒 取出来是 undefined。
+             */
+            try {
+                var 玻璃 = new android.graphics.drawable.GradientDrawable();
+                // ⚠️ 别太透。原来是 36% 黑,后来试过 90%,**底下页面的字还是会透上来**,
+                //    压在腾讯那种满屏文字的页面上一片糊。96% 才干净,又还看得出是浮层。
+                玻璃.setColor(colors.parseColor("#f5202124"));
+                玻璃.setCornerRadius(18 * 屏幕密度);
+                控制条.盒.setBackground(玻璃);
+                // 胶囊(圆角 = 高度一半)。深卡上用浅色按钮更清楚,停止保留红色语义。
+                装按钮(控制条.暂, "#f1f3f4", "#202124", "#33000000", 20);
+                装按钮(控制条.停, "#e5484d", "#ffffff", 白纹, 20);
+            } catch (e) { 诊("(悬浮条上妆失败:" + e + ")"); }
             try {
                 控制条.暂.on("click", function () {
                     控制.暂停 = !控制.暂停;
@@ -730,10 +748,10 @@ function 圆角面(底色) {
     return d;
 }
 
-function 装按钮(钮, 底色, 字色, 波纹色) {
+function 装按钮(钮, 底色, 字色, 波纹色, 圆角dp) {
     try {
         var 面 = 圆角面(底色);
-        面.setCornerRadius(14 * 屏幕密度);
+        面.setCornerRadius((圆角dp || 14) * 屏幕密度);
         var 背 = new android.graphics.drawable.RippleDrawable(
             android.content.res.ColorStateList.valueOf(colors.parseColor(波纹色)), 面, null);
         钮.setBackground(背);
