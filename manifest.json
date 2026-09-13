@@ -1,16 +1,16 @@
 {
   "脚本": {
-    "版本": "2026.09.13.25",
+    "版本": "2026.09.13.26",
     "地址": "https://raw.githubusercontent.com/xiaogubiaobai/xiaogu-biaobai/main/checkin.js",
-    "sha256": "b87febc0dce6ad069bd19afa3e0397b9e6793a0e4f2a3248f6347a71f661f892",
-    "说明": "多操作对象:设置里可多选、依次跑完;那一行放在跑完发通知下面"
+    "sha256": "366398e759d617053042d55efc9a4679ee95e3ce2f30f753ad8953595b90d882",
+    "说明": "APK 0.1.6:内置脚本跟上(含深链钉组件的修复);多操作对象"
   },
   "APK": {
-    "最低版本号": 6,
-    "最新版本号": 6,
-    "最新版本名": "0.1.5",
-    "地址": "https://github.com/xiaogubiaobai/xiaogu-biaobai/releases/download/v0.1.5/xiaogu-biaobai-0.1.5.apk",
-    "sha256": "9792a8a1a2e97c4f5702ef744b4814a35fb946b6574e17d075d3b203ea0d78a6"
+    "最低版本号": 7,
+    "最新版本号": 7,
+    "最新版本名": "0.1.6",
+    "地址": "https://github.com/xiaogubiaobai/xiaogu-biaobai/releases/download/v0.1.6/xiaogu-biaobai-0.1.6.apk",
+    "sha256": "cdf5ab13e98c641b2e6f5968c6c17cef3a59fa23af7f32463eab3c96dc31fb9d"
   },
-  "更新时间": "2026/09/13 16:27"
+  "更新时间": "2026/09/13 19:50"
 }
