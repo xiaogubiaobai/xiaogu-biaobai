@@ -1,16 +1,16 @@
 {
   "脚本": {
-    "版本": "2026.09.13.6",
+    "版本": "2026.09.13.7",
     "地址": "https://raw.githubusercontent.com/xiaogubiaobai/xiaogu-biaobai/main/checkin.js",
-    "sha256": "0f3a58f3475de8d4cad130d146a08bd6847c9213462124656f86d46479bc6e51",
-    "说明": "用词统一成表白;第二颗按钮改名 开始表白(APP内切号)"
+    "sha256": "5a1f1420b86930785e169312e60ec3304335fe321526683896cea110fe538f40",
+    "说明": "按钮改成圆角+波纹,两颗主按钮等高,次要那颗改淡底深字"
   },
   "APK": {
     "最低版本号": 5,
     "最新版本号": 5,
     "最新版本名": "0.1.4",
     "地址": "https://github.com/xiaogubiaobai/xiaogu-biaobai/releases/download/v0.1.4/xiaogu-biaobai-0.1.4.apk",
-    "sha256": "f2ba1eae8ee26e0e30572df74e83cd5023148da5f6e1dd6da451197311d52af2"
+    "sha256": "73ebb81ecc16a0ada30825d8a86c845798ef4982d145e6b54a4fa07280288c0c"
   },
-  "更新时间": "2026/09/13 08:06"
+  "更新时间": "2026/09/13 08:10"
 }
