@@ -60,7 +60,7 @@ var 配置 = {
  *    我为此白改了好几轮,还有一次跑着旧脚本把当天 7 个角色的表白机会全用光了。
  *    现在启动日志第一行就报这个戳,跟 build.py 打印的对一下就知道装对没有。
  */
-var 构建标记 = "远程 2026.09.13.6";
+var 构建标记 = "远程 2026.09.13.7";
 
 /*
  * ── 用哪个腾讯视频 ──
@@ -314,7 +314,7 @@ ui.layout(
              **分区靠的是底色断开,不是靠留白。**
         */}
         <vertical id="脚本卡" bg="#ffffff" margin="14 12 14 0" padding="18">
-            <button id="主钮" text="请稍候" textSize="19sp" h="60" margin="0 0 0 6"
+            <button id="主钮" text="请稍候" textSize="17sp" h="56" margin="0 0 0 10"
                     bg="#1a73e8" textColor="#ffffff"/>
             {/*
               两颗按钮的差别只有**范围**:当前这个号 / 切换列表里的每个号。
@@ -323,8 +323,8 @@ ui.layout(
               ⚠️ 曾经还有第三颗「开始切号(只切不签)」和「干跑」,是开发期用来省表白机会的,
                  链路验完就删了 —— 普通用户看见只会困惑。要干跑改 配置.干跑 即可。
             */}
-            <button id="切签钮" text="开始表白(APP内切号)" textSize="16sp" h="52"
-                    margin="0 0 0 10" bg="#174ea6" textColor="#ffffff"/>
+            <button id="切签钮" text="开始表白(APP内切号)" textSize="16sp" h="56"
+                    margin="0 0 0 2" bg="#e8f0fe" textColor="#174ea6"/>
 
             
 
@@ -690,6 +690,50 @@ function 写状态(视图, 开着) {
     视图.setTextColor(colors.parseColor(开着 ? "#1b7f3b" : "#b3261e"));
 }
 
+/*
+ * 按钮的样子。
+ *
+ * ⚠️ 圆角**没法写在布局里** —— `bg` 只吃颜色字符串,给不了 drawable。
+ *    只能建 GradientDrawable 再 setBackground。
+ * ⚠️⚠️ 一旦 setBackground,**系统自带的按下反馈就没了**,点上去毫无动静、看着像坏的。
+ *    所以必须自己包一层 RippleDrawable。这条很容易漏 —— 静态截图上完全看不出来。
+ * ⚠️ 还要 setStateListAnimator(null):系统默认按钮带一套「按下抬起」的阴影动画,
+ *    配自绘背景会在圆角外面露出一圈方形阴影。
+ * ⚠️ 谁 setBackgroundColor 谁就把这套背景冲掉(踩点:暂停钮原来每秒改一次颜色)。
+ *    要变色就重新调 装按钮(),别用 setBackgroundColor。
+ */
+var 屏幕密度 = (function () {
+    try { return context.getResources().getDisplayMetrics().density; } catch (e) { return 3; }
+})();
+
+function 装按钮(钮, 底色, 字色, 波纹色) {
+    try {
+        var 面 = new android.graphics.drawable.GradientDrawable();
+        面.setColor(colors.parseColor(底色));
+        面.setCornerRadius(14 * 屏幕密度);
+        var 背 = new android.graphics.drawable.RippleDrawable(
+            android.content.res.ColorStateList.valueOf(colors.parseColor(波纹色)), 面, null);
+        钮.setBackground(背);
+        钮.setTextColor(colors.parseColor(字色));
+        try { 钮.setStateListAnimator(null); } catch (e) {}
+        try { 钮.setAllCaps(false); } catch (e) {}
+    } catch (e) { 诊("装按钮出错:" + e); }   // 装不上就退回布局里那个方角背景,不影响能用
+}
+
+var 白纹 = "#40ffffff", 蓝纹 = "#331a73e8";
+
+function 美化按钮() {
+    装按钮(ui.主钮,       "#1a73e8", "#ffffff", 白纹);
+    装按钮(ui.切签钮,     "#e8f0fe", "#174ea6", 蓝纹);   // 次要:浅底深字,不用第二种蓝
+    装按钮(ui.去开无障碍钮, "#b3261e", "#ffffff", 白纹);
+    装按钮(ui.受限钮,     "#f57c00", "#ffffff", 白纹);
+    装按钮(ui.停止钮,     "#b3261e", "#ffffff", 白纹);
+    装按钮(ui.查更新钮,   "#1a73e8", "#ffffff", 白纹);
+    装按钮(ui.装新包钮,   "#1e8e3e", "#ffffff", 白纹);
+}
+
+var 暂停钮色 = "";   // 只在真的换色时重画,别每秒新建一个 drawable
+
 function 刷新状态() {
     var 开了 = 无障碍开着();
     var 跑着 = 控制.跑着;
@@ -783,7 +827,8 @@ function 刷新状态() {
             ui.状态.setTextColor(colors.parseColor(控制.暂停 ? "#8a5300" : "#12496b"));
             ui.状态.setBackgroundColor(colors.parseColor(控制.暂停 ? "#fff4e5" : "#e3f0f8"));
             ui.暂停钮.setText(控制.暂停 ? "继续" : "暂停");
-            ui.暂停钮.setBackgroundColor(colors.parseColor(控制.暂停 ? "#1e8e3e" : "#f57c00"));
+            var 暂色 = 控制.暂停 ? "#1e8e3e" : "#f57c00";
+            if (暂色 !== 暂停钮色) { 暂停钮色 = 暂色; 装按钮(ui.暂停钮, 暂色, "#ffffff", 白纹); }
         }
         ui.主钮.setText("开始表白(单号)");
     });
@@ -2143,6 +2188,7 @@ function 跑一轮() {
  *    函数声明会提升,`var` 的赋值不会 —— 放前面的话 `偏好` 还是 undefined,
  *    「只问一次」记不住,会每次启动都弹一遍。踩过。
  */
+美化按钮();
 try { if (偏好) 上次结果 = 偏好.get("上次结果", "") || ""; } catch (e) {}
 // ⚠️ 跟上次结果一样,要等 偏好 赋值完才读得到;读完立刻刷一次,
 //    否则会先按默认值张开、一秒后才收起,闪一下。
