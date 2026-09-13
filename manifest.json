@@ -1,18 +1,18 @@
 {
   "脚本": {
-    "版本": "2026.09.13.26",
+    "版本": "2026.09.14.1",
     "地址": "https://raw.githubusercontent.com/xiaogubiaobai/xiaogu-biaobai/main/checkin.js",
-    "sha256": "366398e759d617053042d55efc9a4679ee95e3ce2f30f753ad8953595b90d882",
-    "说明": "APK 0.1.6:内置脚本跟上(含深链钉组件的修复);多操作对象"
+    "sha256": "c7475492630dcd828436edf44e0e4129b461086a6d68a3b57292833b672546dc",
+    "说明": "0.1.7:APK 瘦身 56→33.5 MB;内置国内镜像地址(拉不到自动退回 GitHub);跟随重定向;补上主机名校验"
   },
   "APK": {
-    "最低版本号": 7,
-    "最新版本号": 7,
-    "最新版本名": "0.1.6",
-    "地址": "https://github.com/xiaogubiaobai/xiaogu-biaobai/releases/latest/download/xiaogu-biaobai.apk",
-    "sha256": "cdf5ab13e98c641b2e6f5968c6c17cef3a59fa23af7f32463eab3c96dc31fb9d"
+    "最低版本号": 9,
+    "最新版本号": 9,
+    "最新版本名": "0.1.7",
+    "地址": "https://github.com/xiaogubiaobai/xiaogu-biaobai/releases/download/v0.1.7/xiaogu-biaobai.apk",
+    "sha256": "b1d7d728f3a9b6f8f2ddfaddf808b74a7df589d6d7b8e5129adcbb0cdd4a7077"
   },
-  "更新时间": "2026/09/13 19:50",
+  "更新时间": "2026/09/14 06:30",
   "迁移": {
     "新清单地址": "https://raw.giteeusercontent.com/flyten1129/xiaogu-biaobai/raw/master/manifest.json"
   }
