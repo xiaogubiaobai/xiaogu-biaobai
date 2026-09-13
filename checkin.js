@@ -60,7 +60,7 @@ var 配置 = {
  *    我为此白改了好几轮,还有一次跑着旧脚本把当天 7 个角色的表白机会全用光了。
  *    现在启动日志第一行就报这个戳,跟 build.py 打印的对一下就知道装对没有。
  */
-var 构建标记 = "远程 2026.09.13.7";
+var 构建标记 = "远程 2026.09.13.8";
 
 /*
  * ── 用哪个腾讯视频 ──
@@ -314,8 +314,8 @@ ui.layout(
              **分区靠的是底色断开,不是靠留白。**
         */}
         <vertical id="脚本卡" bg="#ffffff" margin="14 12 14 0" padding="18">
-            <button id="主钮" text="请稍候" textSize="17sp" h="56" margin="0 0 0 10"
-                    bg="#1a73e8" textColor="#ffffff"/>
+            <button id="切签钮" text="♥&#65038; 开始表白(切号)" textSize="17sp" h="56"
+                    margin="0 0 0 10" bg="#e8437c" textColor="#ffffff"/>
             {/*
               两颗按钮的差别只有**范围**:当前这个号 / 切换列表里的每个号。
               ⚠️ 所以用同一个色系、深浅不同,不要一蓝一紫 —— 那会让人以为是两种不同的东西。
@@ -323,8 +323,8 @@ ui.layout(
               ⚠️ 曾经还有第三颗「开始切号(只切不签)」和「干跑」,是开发期用来省表白机会的,
                  链路验完就删了 —— 普通用户看见只会困惑。要干跑改 配置.干跑 即可。
             */}
-            <button id="切签钮" text="开始表白(APP内切号)" textSize="16sp" h="56"
-                    margin="0 0 0 2" bg="#e8f0fe" textColor="#174ea6"/>
+            <button id="主钮" text="请稍候" textSize="16sp" h="56"
+                    margin="0 0 0 2" bg="#fdeaf1" textColor="#c2185b"/>
 
             
 
@@ -706,10 +706,30 @@ var 屏幕密度 = (function () {
     try { return context.getResources().getDisplayMetrics().density; } catch (e) { return 3; }
 })();
 
+/*
+ * 底色可以给一个颜色,也可以给 [上, 下] 两个颜色做渐层 —— 主按钮用渐层照着 logo 来
+ * (icon.png 实测是 #f56a97 → #e13665 的粉色渐层 + 白爱心)。
+ * ⚠️ 渐层构造器要的是 int[],靠 Rhino 自动转;万一转不过去就退回纯色,别让按钮整个没背景。
+ */
+function 圆角面(底色) {
+    if (Object.prototype.toString.call(底色) === "[object Array]") {
+        try {
+            return new android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+                [colors.parseColor(底色[0]), colors.parseColor(底色[1])]);
+        } catch (e) {
+            诊("渐层建不出来,退回纯色:" + e);
+            底色 = 底色[1];
+        }
+    }
+    var d = new android.graphics.drawable.GradientDrawable();
+    d.setColor(colors.parseColor(底色));
+    return d;
+}
+
 function 装按钮(钮, 底色, 字色, 波纹色) {
     try {
-        var 面 = new android.graphics.drawable.GradientDrawable();
-        面.setColor(colors.parseColor(底色));
+        var 面 = 圆角面(底色);
         面.setCornerRadius(14 * 屏幕密度);
         var 背 = new android.graphics.drawable.RippleDrawable(
             android.content.res.ColorStateList.valueOf(colors.parseColor(波纹色)), 面, null);
@@ -720,16 +740,26 @@ function 装按钮(钮, 底色, 字色, 波纹色) {
     } catch (e) { 诊("装按钮出错:" + e); }   // 装不上就退回布局里那个方角背景,不影响能用
 }
 
-var 白纹 = "#40ffffff", 蓝纹 = "#331a73e8";
+var 白纹 = "#40ffffff", 粉纹 = "#33e13665";
+// 照 icon.png 取的色:上 #f56a97 → 下 #e13665,深色版 #c2185b 给浅底按钮和链接用
+var 粉渐层 = ["#f56a97", "#e13665"], 粉深 = "#c2185b", 粉浅 = "#fdeaf1";
 
 function 美化按钮() {
-    装按钮(ui.主钮,       "#1a73e8", "#ffffff", 白纹);
-    装按钮(ui.切签钮,     "#e8f0fe", "#174ea6", 蓝纹);   // 次要:浅底深字,不用第二种蓝
+    // 主功能(切号)用 logo 的渐层粉;次要那颗同色系浅底深字 —— 层级靠填充方式,不靠换颜色
+    装按钮(ui.切签钮,     粉渐层, "#ffffff", 白纹);
+    装按钮(ui.主钮,       粉浅,   粉深,      粉纹);
+    装按钮(ui.查更新钮,   粉渐层, "#ffffff", 白纹);
+    // ⚠️ 下面这几个**不跟着变粉**:它们的颜色是语义(危险红、警告橙、放行绿),
+    //    不是装饰。全刷成粉色就分不出「这一步有风险」了。
     装按钮(ui.去开无障碍钮, "#b3261e", "#ffffff", 白纹);
     装按钮(ui.受限钮,     "#f57c00", "#ffffff", 白纹);
     装按钮(ui.停止钮,     "#b3261e", "#ffffff", 白纹);
-    装按钮(ui.查更新钮,   "#1a73e8", "#ffffff", 白纹);
     装按钮(ui.装新包钮,   "#1e8e3e", "#ffffff", 白纹);
+    // 同一张卡里的两个入口也跟着走粉色,免得卡里一半粉一半蓝
+    try {
+        ui.看版本.setTextColor(colors.parseColor(粉深));
+        ui.看日志.setTextColor(colors.parseColor(粉深));
+    } catch (e) {}
 }
 
 var 暂停钮色 = "";   // 只在真的换色时重画,别每秒新建一个 drawable
