@@ -1,16 +1,16 @@
 {
   "脚本": {
-    "版本": "2026.09.13.20",
+    "版本": "2026.09.13.21",
     "地址": "https://raw.githubusercontent.com/xiaogubiaobai/xiaogu-biaobai/main/checkin.js",
-    "sha256": "b595dfe49875aa965481a6c1c72aad041bb32da164c8b4a60bc0a2d4ee125d5c",
-    "说明": "多账号中止/失败也会发通知并复位状态;修掉「多账号进行中」残留导致下一次运行没结果"
+    "sha256": "3bd119344dcb019e4701d45c234a16587811678fdfa9a5e70a9155303b4fd450",
+    "说明": "修:深链让腾讯任务栈以深链页为根导致点图标白屏;跑完把腾讯送回首页;面板超时清栈重试"
   },
   "APK": {
     "最低版本号": 5,
     "最新版本号": 5,
     "最新版本名": "0.1.4",
     "地址": "https://github.com/xiaogubiaobai/xiaogu-biaobai/releases/download/v0.1.4/xiaogu-biaobai-0.1.4.apk",
-    "sha256": "046f5f8edbaec9f3bd1daf90ecb0ea08a2e7b1883c05cc5e7e3e51f3bb13d0cf"
+    "sha256": "63e63e7fe809200e99f4a56d3a39614f9c0ea7caa31728df2ff5013e102b7724"
   },
-  "更新时间": "2026/09/13 10:57"
+  "更新时间": "2026/09/13 11:46"
 }
