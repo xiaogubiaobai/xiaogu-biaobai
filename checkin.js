@@ -60,7 +60,7 @@ var 配置 = {
  *    我为此白改了好几轮,还有一次跑着旧脚本把当天 7 个角色的表白机会全用光了。
  *    现在启动日志第一行就报这个戳,跟 build.py 打印的对一下就知道装对没有。
  */
-var 构建标记 = "远程 2026.09.13.14";
+var 构建标记 = "远程 2026.09.13.15";
 
 /*
  * ── 用哪个腾讯视频 ──
@@ -626,13 +626,16 @@ function 求悬浮窗() {
  *
  * 所以:开面板前挪到顶,进角色循环时挪回来。
  */
-var 控制条常位 = 0.45, 控制条让位 = 0.04;
+var 控制条常位 = 0.45, 控制条让位 = 0.02;
+// ⚠️ 尺寸写成常量:布局、setSize、挪位置三处都要用同一组数,各写各的迟早对不上
+//    (悬浮窗的大小是创建那一刻按内容量的,setSize 比内容小就会裁掉一截)。
+var 条宽dp = 88, 条高dp = 119, 条缩dp = 6;
 
 function 挪控制条(高比例) {
     if (!控制条) return;
     try {
         var 密 = context.getResources().getDisplayMetrics().density;
-        var 宽 = Math.round(110 * 密), 缩 = Math.round(8 * 密);
+        var 宽 = Math.round(条宽dp * 密), 缩 = Math.round(条缩dp * 密);
         控制条.setPosition(device.width - 宽 - 缩, Math.round(device.height * 高比例));
     } catch (e) { 诊("(挪控制条失败:" + e + ")"); }
 }
@@ -649,13 +652,13 @@ function 开控制条() {
          */
         控制条 = floaty.rawWindow(
             <frame>
-                <vertical id="盒" bg="#f5202124" padding="10" gravity="center">
-                    <text id="字" text="准备中" textColor="#ffffff" textSize="11sp"
-                          w="88" h="42" gravity="center"/>
-                    <button id="暂" text="暂停" w="88" h="40" textSize="12sp"
+                <vertical id="盒" bg="#f5202124" padding="8" gravity="center">
+                    <text id="字" text="准备中" textColor="#ffffff" textSize="10sp"
+                          w="72" h="34" gravity="center"/>
+                    <button id="暂" text="暂停" w="72" h="32" textSize="11sp"
                             bg="#f1f3f4" textColor="#202124"/>
-                    <button id="停" text="停止" w="88" h="40" textSize="12sp"
-                            margin="0 8 0 0" bg="#e5484d" textColor="#ffffff"/>
+                    <button id="停" text="停止" w="72" h="32" textSize="11sp"
+                            margin="0 5 0 0" bg="#e5484d" textColor="#ffffff"/>
                 </vertical>
             </frame>);
         /*
@@ -676,8 +679,8 @@ function 开控制条() {
             try {
                 // dp → px 自己算,别写死像素 —— 不同机器密度不一样
                 var 密 = context.getResources().getDisplayMetrics().density;
-                // 内容 88 宽 + 左右各 10 padding = 108;高 42+40+8+40 + 上下 20 = 150
-                var 宽 = Math.round(110 * 密), 高 = Math.round(154 * 密);
+                // 内容 72 宽 + 左右各 8 padding = 88;高 34+32+5+32 + 上下 16 = 119
+                var 宽 = Math.round(条宽dp * 密), 高 = Math.round(条高dp * 密);
                 控制条.setSize(宽, 高);
                 // 贴右边缘、竖向放在 45% 高度处。
                 // 表白按钮实测在 y≈328~370,这里从 y≈0.45*屏高 才开始,隔得很开。
@@ -692,11 +695,11 @@ function 开控制条() {
                 // ⚠️ 别太透。原来是 36% 黑,后来试过 90%,**底下页面的字还是会透上来**,
                 //    压在腾讯那种满屏文字的页面上一片糊。96% 才干净,又还看得出是浮层。
                 玻璃.setColor(colors.parseColor("#f5202124"));
-                玻璃.setCornerRadius(18 * 屏幕密度);
+                玻璃.setCornerRadius(14 * 屏幕密度);
                 控制条.盒.setBackground(玻璃);
                 // 胶囊(圆角 = 高度一半)。深卡上用浅色按钮更清楚,停止保留红色语义。
-                装按钮(控制条.暂, "#f1f3f4", "#202124", "#33000000", 20);
-                装按钮(控制条.停, "#e5484d", "#ffffff", 白纹, 20);
+                装按钮(控制条.暂, "#f1f3f4", "#202124", "#33000000", 16);
+                装按钮(控制条.停, "#e5484d", "#ffffff", 白纹, 16);
             } catch (e) { 诊("(悬浮条上妆失败:" + e + ")"); }
             try {
                 控制条.暂.on("click", function () {
@@ -1999,7 +2002,11 @@ var 切号面板Activity = "VBLoginVDlgActivity";
 
 /** 打开切号面板。成功返回 true。 */
 function 开切号面板(超时毫秒) {
-    挪控制条(控制条让位);        // 面板是底部弹层,控制条先让开
+    // 面板是底部弹层,控制条往右上角让开。
+    // ⚠️ 面板的关闭 ✕ 也在右上角,所以让位要**够高**:条高 119dp、让位 2%,
+    //    底边落在 y≈400px,而 ✕ 实测在 y≈670px —— 隔着 270px,不会贴在一起。
+    //    (试过挪到左上角,离 ✕ 是远了,但突然横跳到另一边更奇怪。)
+    挪控制条(控制条让位);
     var 截止 = Date.now() + (超时毫秒 || 15000);
     var 上次发 = 0;
     while (Date.now() < 截止) {
