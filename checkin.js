@@ -60,7 +60,7 @@ var 配置 = {
  *    我为此白改了好几轮,还有一次跑着旧脚本把当天 7 个角色的表白机会全用光了。
  *    现在启动日志第一行就报这个戳,跟 build.py 打印的对一下就知道装对没有。
  */
-var 构建标记 = "远程 2026.09.14.1";
+var 构建标记 = "远程 2026.09.16.1";
 
 /*
  * ── 用哪个腾讯视频 ──
@@ -1911,15 +1911,83 @@ function 取深链组件(url) {
         var 探 = new android.content.Intent(android.content.Intent.ACTION_VIEW,
             android.net.Uri.parse(url));
         探.setPackage(腾讯包);
-        var ri = context.getPackageManager().resolveActivity(探, 0);
-        if (ri && ri.activityInfo) {
-            var cn = new android.content.ComponentName(
-                ri.activityInfo.packageName, ri.activityInfo.name);
+        var pm = context.getPackageManager();
+        /*
+         * ⚠️⚠️ 别只用 resolveActivity。候选不止一个时它返回的是**系统选择器本身**
+         *    (com.android.internal.app.ResolverActivity,包名 "android")。
+         *    不校验就会把选择器钉死当目标 —— **每次换角色页都强制弹框**,
+         *    比不钉组件还糟。分身机型报的「新版也照样弹」最可能就是这个。
+         * ⚠️ 所以改成先 queryIntentActivities 列出**全部候选**,再自己从里面挑出
+         *    包名是腾讯的那一个。这样即使系统想给我们选择器,我们也能拿到真组件。
+         *    拿到真组件 → 显式 Intent → 不经过解析 → 没有选择器。
+         * ⚠️ 比较包名必须 String() 两边再比:activityInfo.packageName 是 Java String,
+         *    跟 JS 字符串用 === 永远不相等(踩过)。
+         */
+        /*
+         * ⚠️⚠️ **光比包名区分不了分身** —— 分身跟本尊是同一个包名、同一个
+         *    ComponentName,只有 UserHandle 不同。所以候选里可能有两个「腾讯」,
+         *    而 packageName 一模一样。
+         * ⚠️ 能区分的是 **uid**:Android 的规则是 uid = userId * 100000 + appId,
+         *    所以 uid / 100000 就是它属于哪个 user。本尊在 user 0,
+         *    分身看机型(三星 DUAL_APP 是 95,MIUI 双开一般 999,手机分身是 11)。
+         * ⚠️ dataDir(/data/user/<N>/包名)和 loadLabel(vivo 给分身加「Ⅱ.」前缀)
+         *    是另外两个旁证,一起打进日志 —— 用户报障时这一行就能说清现场。
+         * ⚠️ 选的时候优先**跟我们自己同一个 user** 的那个:ComponentName 里没有
+         *    user 维度,显式 Intent 本来就只会在 caller 自己的 user 里起,
+         *    所以钉本尊那个才是自洽的。
+         */
+        var 我的user = -1;
+        try { 我的user = Math.floor(android.os.Process.myUid() / 100000); } catch (e) {}
+        var 中 = null, 备 = null, 候选描述 = [];
+        try {
+            var 表 = pm.queryIntentActivities(探, 0);
+            for (var i = 0; i < 表.size(); i++) {
+                var 项 = 表.get(i);
+                var ai = 项.activityInfo;
+                if (!ai) continue;
+                var uid = -1, dd = "?", 标签 = "?", tu = "";
+                try { uid = ai.applicationInfo.uid; } catch (e) {}
+                try { dd = String(ai.applicationInfo.dataDir || "?"); } catch (e) {}
+                try { 标签 = String(项.loadLabel(pm)); } catch (e) {}
+                // targetUserId 是隐藏字段,跨 profile 候选才有值;取不到就算了
+                try {
+                    var f = 项.getClass().getField("targetUserId");
+                    tu = " targetUserId=" + f.getInt(项);
+                } catch (e) {}
+                var uu = uid >= 0 ? Math.floor(uid / 100000) : -1;
+                候选描述.push("[" + ai.packageName + "/" + ai.name
+                              + " uid=" + uid + " user=" + uu
+                              + " 名=" + 标签 + " 数据=" + dd + tu + "]");
+                if (String(ai.packageName) !== String(腾讯包)) continue;
+                if (uu === 我的user) { if (!中) 中 = ai; }
+                else if (!备) 备 = ai;      // 同包但别的 user —— 多半就是分身
+            }
+            诊("我在 user " + 我的user + ";深链候选 " + 表.size() + " 个:"
+               + 候选描述.join(" ").substring(0, 420));
+        } catch (e) { 诊("列候选出错:" + e); }
+        if (!中 && 备) {
+            诊("⚠️ 候选里腾讯只出现在别的 user(分身?),没有跟我同 user 的那个");
+            中 = 备;
+        }
+
+        // 兜底:老系统上 queryIntentActivities 万一空了,再试 resolveActivity
+        if (!中) {
+            var ri = pm.resolveActivity(探, 0);
+            if (ri && ri.activityInfo && String(ri.activityInfo.packageName) === String(腾讯包)) {
+                中 = ri.activityInfo;
+            } else if (ri && ri.activityInfo) {
+                诊("深链组件:resolveActivity 给的是 " + ri.activityInfo.packageName
+                   + "/" + ri.activityInfo.name + "(多半是选择器),不钉它");
+            }
+        }
+
+        if (中) {
+            var cn = new android.content.ComponentName(中.packageName, 中.name);
             深链组件[腾讯包] = cn;
             诊("深链组件:" + cn.flattenToShortString());
             return cn;
         }
-        诊("深链组件:解析不出来,退回只钉包名");
+        诊("深链组件:候选里没有腾讯自己的组件,退回只钉包名");
     } catch (e) { 诊("解析深链组件出错:" + e); }
     return null;
 }
@@ -2173,6 +2241,13 @@ function 去角色页(链, 页面名, 总超时) {
 function 签一个内部(角色) {
     记("── " + 角色.名 + " ──");
 
+    /*
+     * ⚠️ 后面那两个参数**不是冗余的,别删**。
+     *    只带 topic_id 的话页面进得去(Activity 确实是 TopicFeedsPageActivity),
+     *    但渲染不出来 —— 显示「当前网络不稳定 / 错误码:-1000000」,点重试变全白。
+     *    看起来像网络问题,其实是腾讯不知道这一页该按哪种版式渲染。
+     *    2026-09-15 实测:同一个 topic_id,少参数必白屏,补上立刻正常。
+     */
     var 链 = "txvideo://v.qq.com/TopicFeedsPageActivity?topic_id=" + 角色.topic
            + "&page_type=feed_topic_nav&topic_type=11";
     var 页面名 = 角色.页面名 || 角色.名;
