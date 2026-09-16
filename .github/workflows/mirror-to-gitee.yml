@@ -11,9 +11,10 @@ on:
   push:
     branches: [main]
     paths:
-      - checkin.js
-      - manifest.json
-      - manifest.gitee.json
+      # ⚠️ 通配写法是给**通道**留的:checkin.beta.js / manifest.beta.gitee.json 这些
+      #    不用再回来改这个文件。稳定那两个也在这个模式里。
+      - "checkin*.js"
+      - "manifest*.json"
       - index.html
   release:
     types: [published]
@@ -45,10 +46,19 @@ jobs:
           test -n "$GITEE_TOKEN" || { echo "没设 GITEE_TOKEN secret"; exit 1; }
           git clone -q --depth 1 -b master \
             "https://oauth2:${GITEE_TOKEN}@gitee.com/${GITEE_OWNER}/${GITEE_REPO}.git" gt
-          cp checkin.js index.html gt/
+          cp index.html gt/
+          # 每条通道一份脚本:checkin.js(稳定)、checkin.beta.js …… 全搬
+          cp checkin*.js gt/
           # ⚠️ 镜像那份清单由 release.py 生成(地址常量只在那儿定义一次),
-          #    这里只是改个名照抄,不做任何改写。
-          cp manifest.gitee.json gt/manifest.json
+          #    这里只是改个名照抄,不做任何改写:
+          #      manifest.gitee.json      → manifest.json
+          #      manifest.beta.gitee.json → manifest.beta.json
+          # ⚠️ 只搬 *.gitee.json,**别搬 GitHub 那份同名清单** —— 那份里的脚本地址
+          #    指着 raw.githubusercontent,搬过去等于让国内用户从 GitHub 拉脚本。
+          for f in manifest*.gitee.json; do
+            [ -e "$f" ] || continue
+            cp "$f" "gt/$(echo "$f" | sed 's/[.]gitee[.]json$/.json/')"
+          done
           cd gt
           git config user.name  "小菇爱表白"
           git config user.email "noreply@xiaogu-biaobai.invalid"
