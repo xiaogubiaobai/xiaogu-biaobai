@@ -60,7 +60,7 @@ var 配置 = {
  *    我为此白改了好几轮,还有一次跑着旧脚本把当天 7 个角色的表白机会全用光了。
  *    现在启动日志第一行就报这个戳,跟 build.py 打印的对一下就知道装对没有。
  */
-var 构建标记 = "远程 2026.09.16.1";
+var 构建标记 = "远程 2026.09.17.1";
 
 /*
  * ── 用哪个腾讯视频 ──
@@ -543,6 +543,15 @@ ui.layout(
                     <button id="装新包钮" text="下载并安装新版" textSize="16sp" h="52"
                             visibility="gone" margin="0 8 0 6" bg="#1e8e3e" textColor="#ffffff"/>
                     {/* 只有当系统里不止一个应用能处理 txvideo:// 时才出现 */}
+                    {/* ⚠️ 只有加载器认这个开关的包才显示(见 有自动查开关 那个记号)。
+                        老包拉到新脚本也不会画出来 —— 画了就是个死开关 */}
+                    <horizontal id="行自动查" h="56" gravity="center_vertical" visibility="gone">
+                        <vertical layout_weight="1">
+                            <text text="自动查更新" textSize="15sp" textColor="#1f1f1f"/>
+                            <text id="自动查说明" text="" textSize="12sp" textColor="#8a8a8a"/>
+                        </vertical>
+                        <Switch id="自动查开关" checked="true"/>
+                    </horizontal>
                     <text id="查更新说明" text="" textSize="13sp" textColor="#8a8a8a" margin="0 4 0 0"/>
                 </vertical>
             </scroll>
@@ -1172,6 +1181,30 @@ ui.通知开关.on("check", function (勾上) {
  * 加载器把检查结果写在 SharedPreferences 里,这里直接读 ——
  * 不依赖加载器的全局对象,因为脚本也可能被 AutoJs6 直接跑,那时根本没有加载器。
  */
+/*
+ * 自动查更新开不开。
+ * ⚠️ 存在**通道自己**那份偏好里(loader-<通道>),跟 loader 读的是同一个键 ——
+ *    在测试包里关掉,不该影响正式包。
+ */
+function 读自动查() {
+    return 读加载器偏好("自动查", "1") !== "0";
+}
+function 写自动查(开) {
+    try {
+        var 基 = context.getSharedPreferences("loader", 0);
+        var 通 = String(基.getString("当前通道", "") || "");
+        var 盘 = 通 ? context.getSharedPreferences("loader-" + 通, 0) : 基;
+        盘.edit().putString("自动查", 开 ? "1" : "0").apply();
+    } catch (e) { 诊("写自动查出错:" + e); }
+}
+/** 这个包的加载器认不认这个开关。不认就别画 —— 画了也是死的 */
+function 有自动查开关() {
+    try {
+        return String(context.getSharedPreferences("loader", 0)
+                      .getString("有自动查开关", "")) === "1";
+    } catch (e) { return false; }
+}
+
 /** 现在跑在哪条通道上。空 = 稳定。由 loader.js 启动时写进基础偏好 */
 function 当前通道() {
     try {
@@ -1274,10 +1307,20 @@ function 画版本页() {
            + "上次检查  " + 何时 + 行分
            + "结果      " + 读加载器偏好("上次查结果", "(还没查过)") + 行分 + 行分
            + "操作对象  " + 腾讯行;
+    var 有开关 = 有自动查开关(), 自动 = 读自动查();
     ui.run(function () {
+        ui.行自动查.setVisibility(有开关 ? android.view.View.VISIBLE : android.view.View.GONE);
+        if (有开关) {
+            ui.自动查开关.setChecked(自动);
+            ui.自动查说明.setText(自动 ? "每 6 小时自己查一次"
+                                     : "只有点上面那颗按钮才查(装了新安装包时仍会查一次)");
+        }
         ui.装新包钮.setVisibility(新包提示 ? android.view.View.VISIBLE : android.view.View.GONE);
         ui.版本正文.setText(文);
-        ui.查更新说明.setText("每 6 小时自动查一次;点上面的按钮可以立刻查,不受这个限制。"
+        // ⚠️ 这句得跟着开关走。写死「每 6 小时自动查一次」的话,关了开关的人看到的是假话
+        ui.查更新说明.setText((有开关 && !自动
+                              ? "自动查已关;点上面的按钮可以随时查。"
+                              : "每 6 小时自动查一次;点上面的按钮可以立刻查,不受这个限制。")
                            + 行分 + "查到新版要重开 App(从最近任务划掉再打开)才生效。");
     });
 }
@@ -1444,6 +1487,15 @@ function 选操作对象() {
 }
 
 ui.行目标.on("click", 选操作对象);
+
+ui.自动查开关.on("check", function (view, 勾上) {
+    if (勾上 === 读自动查()) return;            // 是我们自己 setChecked 触发的,别当成用户操作
+    写自动查(勾上);
+    诊("自动查更新改成:" + (勾上 ? "开" : "关"));
+    画版本页();
+    // ⚠️ loader 是在**启动时**读这个值的,所以这次运行内不会变;说清楚免得用户以为没生效
+    toast(勾上 ? "下次启动开始自动查" : "已关,想更新就点「检查更新」");
+});
 
 ui.看日志.on("click", function () { 去看日志(); });
 
