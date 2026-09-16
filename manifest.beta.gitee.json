@@ -1,8 +1,8 @@
 {
   "脚本": {
-    "版本": "2026.09.17.1",
+    "版本": "2026.09.17.2",
     "地址": "https://raw.giteeusercontent.com/flyten1129/xiaogu-biaobai/raw/master/checkin.beta.js",
-    "sha256": "bf99d73810bb12b7db0f187c2076ae2fcb4d54597f4215c3754f3cefe98e1a72",
+    "sha256": "269bc971d212fee8e5178b2c95555876fe2cf803394ee988c254970a09e8b06b",
     "说明": "beta:自动更新开关(默认关);分身选择框抓结构+替用户点;广告页不再空等"
   },
   "APK": {
@@ -10,7 +10,7 @@
     "最新版本号": 9,
     "最新版本名": "0.1.7",
     "地址": "https://gitee.com/flyten1129/xiaogu-biaobai/releases/download/beta/xiaogu-biaobai-beta.apk",
-    "sha256": "73f5c7b0a82c0c6c51d9d5fb8d7c12a69d4ea24d4bff69ff73422caafd6e39b3"
+    "sha256": "271a2bbd78a5e2f8ab0c864ca322545b2b4661994c2579f7d48884a88f3371ce"
   },
-  "更新时间": "2026/09/17 07:17"
+  "更新时间": "2026/09/17 07:24"
 }
