@@ -31,6 +31,10 @@ env:
   GITEE_OWNER: flyten1129
   GITEE_REPO: xiaogu-biaobai
   APK_NAME: xiaogu-biaobai.apk
+  # ⚠️ 正式包的 Release 用**固定 tag `apk`**,不是版本号 tag,更不是 `latest`。
+  #    `latest` 是 Gitee 对「最新那个 Release」的别名 —— 只要再发任何一个 Release
+  #    (比如 beta),它就会指过去,正式下载链当场 404。2026-09-16 踩过,挂了 25 分钟。
+  APK_TAG: apk
 
 jobs:
   mirror:
@@ -105,22 +109,32 @@ jobs:
           # 下歪了(拿到 404 页面)就别往上传
           test "$SIZE" -gt 1000000 || { echo "下下来的东西太小,八成不是 APK"; exit 1; }
 
-          echo "── 找/建同 tag 的 Gitee Release ──"
+          # ⚠️ Gitee 侧**永远只有一个正式 Release**,tag 固定是 ${APK_TAG}(= apk),
+          #    每发一版就换掉里面的附件、改一下标题 —— 下载链因此永不变。
+          #    别再按 ${TAG}(v0.1.8 这种)建:那样每版一个 Release,
+          #    而下载链只能靠 latest 别名去指「最新那个」,一发别的东西就被顶掉(踩过)。
+          echo "── 找/建固定 tag(${APK_TAG})的 Gitee Release ──"
           RID=$(curl -sS "${API}/releases?access_token=${GITEE_TOKEN}&per_page=100" \
-                | jq -r --arg t "$TAG" '.[] | select(.tag_name==$t) | .id' | head -1)
+                | jq -r --arg t "$APK_TAG" '.[] | select(.tag_name==$t) | .id' | head -1)
           if [ -z "$RID" ]; then
             # ⚠️ 必须显式声明 charset=utf-8。不声明的话 Gitee 会按别的编码解,
             #    中文标题直接变乱码 —— 踩过。
             RID=$(curl -sS -X POST "${API}/releases" \
               -H "Content-Type: application/x-www-form-urlencoded; charset=utf-8" \
               --data-urlencode "access_token=${GITEE_TOKEN}" \
-              --data-urlencode "tag_name=${TAG}" \
+              --data-urlencode "tag_name=${APK_TAG}" \
               --data-urlencode "name=${RELNAME}" \
               --data-urlencode "body=${RELBODY}" \
               --data-urlencode "target_commitish=master" | jq -r '.id')
             echo "新建了 $RID"
           else
-            echo "复用已有的 $RID"
+            echo "复用已有的 $RID,把标题和说明改成这一版的"
+            curl -sS -X PATCH "${API}/releases/${RID}" \
+              -H "Content-Type: application/x-www-form-urlencoded; charset=utf-8" \
+              --data-urlencode "access_token=${GITEE_TOKEN}" \
+              --data-urlencode "tag_name=${APK_TAG}" \
+              --data-urlencode "name=${RELNAME}" \
+              --data-urlencode "body=${RELBODY}" >/dev/null || echo "(改标题失败,不致命)"
           fi
           test -n "$RID" -a "$RID" != "null" || { echo "拿不到 release id"; exit 1; }
 
@@ -142,8 +156,11 @@ jobs:
         if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
         run: |
           set -euo pipefail
-          U="https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/releases/download/latest/${APK_NAME}"
-          # ⚠️ Gitee 的段序跟 GitHub 相反:GitHub 是 /releases/latest/download/<文件名>。
+          U="https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/releases/download/${APK_TAG}/${APK_NAME}"
+          # ⚠️ 段序跟 GitHub 相反:GitHub 是 /releases/<tag>/download/<文件名>,
+          #    Gitee 是 /releases/download/<tag>/<文件名>。
+          # ⚠️ 这里**必须是固定 tag**,不能写 latest —— latest 是「最新那个 Release」的
+          #    别名,拿它回验的话,哪天别的 Release 更新,验的就不是这一份了。
           echo "$U"
           # ⚠️ 必须**判定**。上一版只 echo 状态码,结果附件名错了、链接 404,
           #    工作流照样一片绿 —— 等于没验。
