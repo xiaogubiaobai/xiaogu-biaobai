@@ -1,0 +1,16 @@
+{
+  "脚本": {
+    "版本": "2026.09.16.1",
+    "地址": "https://raw.giteeusercontent.com/flyten1129/xiaogu-biaobai/raw/master/checkin.beta.js",
+    "sha256": "933f0d10400e0bf7bf2fd9ccd104a31b16b53eea35992e977c7db5e8a80ab00c",
+    "说明": "beta:分身选择框抓结构+替用户点;深链总说死 user;广告页不再空等 15 秒"
+  },
+  "APK": {
+    "最低版本号": 9,
+    "最新版本号": 9,
+    "最新版本名": "0.1.7",
+    "地址": "https://gitee.com/flyten1129/xiaogu-biaobai/releases/download/latest/xiaogu-biaobai.apk",
+    "sha256": "8eaa14e7993fc2fa8c13352b4b96a461e01e3c69af5030594c87006175c1cafd"
+  },
+  "更新时间": "2026/09/16 23:26"
+}
