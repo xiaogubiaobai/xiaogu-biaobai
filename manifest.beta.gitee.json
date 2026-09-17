@@ -1,16 +1,16 @@
 {
   "脚本": {
-    "版本": "2026.09.17.5",
+    "版本": "2026.09.17.6",
     "地址": "https://raw.giteeusercontent.com/flyten1129/xiaogu-biaobai/raw/master/checkin.beta.js",
-    "sha256": "893b97c818ec23212150132031a3af094863f18875097d39188d430a76c692fe",
-    "说明": "beta:点掉分身框之后推迟重发深链,少弹几次框"
+    "sha256": "bebaa6aad28ca2ac12a11d1d9bac38c34a6958b0272aafa02c800af21c254c06",
+    "说明": "beta:点分身框改成结构优先(节点/文字),手势只当最后一招且落点取自节点"
   },
   "APK": {
     "最低版本号": 9,
     "最新版本号": 9,
     "最新版本名": "0.1.7",
     "地址": "https://gitee.com/flyten1129/xiaogu-biaobai/releases/download/beta/xiaogu-biaobai-beta.apk",
-    "sha256": "ebc541f85ef30e6b0de75ec79dfc3ca008dbda76f1186343a886c5693376aa2a"
+    "sha256": "9e9b5bc81948beaf630428bed8a097c853179b6abf9bae81c2461a39a89207a9"
   },
-  "更新时间": "2026/09/17 08:52"
+  "更新时间": "2026/09/17 09:02"
 }
