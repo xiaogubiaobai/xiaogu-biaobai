@@ -1,16 +1,16 @@
 {
   "脚本": {
-    "版本": "2026.09.17.10",
+    "版本": "2026.09.17.11",
     "地址": "https://raw.giteeusercontent.com/flyten1129/xiaogu-biaobai/raw/master/checkin.beta.js",
-    "sha256": "38d5b5b4dc9c808f6057ccc8253903003a711610395218969656cbdf67a68d78",
-    "说明": "beta:认出 vivo 的第二个框 com.vivo.appfilter「想要打开」并按仅打开一次"
+    "sha256": "ff2f358e870fd41e3dae897bc9565634ead7274c43ce173a0df367bc6886d827",
+    "说明": "beta:跳转确认框按「始终打开」,一次授权以后不再问"
   },
   "APK": {
     "最低版本号": 9,
     "最新版本号": 9,
     "最新版本名": "0.1.7",
     "地址": "https://gitee.com/flyten1129/xiaogu-biaobai/releases/download/beta/xiaogu-biaobai-beta.apk",
-    "sha256": "ad452b80ddc5a7355057a6c68a7425f19726f1ff5ac6944c86b253dfdb42290e"
+    "sha256": "96e19331621b10fad4a932cace5ff7d73dc2dfccf47aafdf0fb9d2353f254ffb"
   },
-  "更新时间": "2026/09/17 14:35"
+  "更新时间": "2026/09/17 14:46"
 }
