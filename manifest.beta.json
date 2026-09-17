@@ -1,18 +1,18 @@
 {
   "脚本": {
-    "版本": "2026.09.17.6",
+    "版本": "2026.09.17.7",
     "地址": "https://raw.githubusercontent.com/xiaogubiaobai/xiaogu-biaobai/main/checkin.beta.js",
-    "sha256": "bebaa6aad28ca2ac12a11d1d9bac38c34a6958b0272aafa02c800af21c254c06",
-    "说明": "beta:点分身框改成结构优先(节点/文字),手势只当最后一招且落点取自节点"
+    "sha256": "092d8a4c67bb62796166df986b0fb3899a2e9b7640ffb1f53ae16f0392607573",
+    "说明": "beta:拉起腾讯那一步的分身框也会自动点(送回首页/先让开两处补上)"
   },
   "APK": {
     "最低版本号": 9,
     "最新版本号": 9,
     "最新版本名": "0.1.7",
     "地址": "https://github.com/xiaogubiaobai/xiaogu-biaobai/releases/download/v0.1.7/xiaogu-biaobai.apk",
-    "sha256": "9e9b5bc81948beaf630428bed8a097c853179b6abf9bae81c2461a39a89207a9"
+    "sha256": "334e0bad6bc1cfec8330b0dfe069f586ea0bfd3d1af5ebe7e4cc52b34d3abfa8"
   },
-  "更新时间": "2026/09/17 09:02",
+  "更新时间": "2026/09/17 09:08",
   "迁移": {
     "新清单地址": "https://raw.giteeusercontent.com/flyten1129/xiaogu-biaobai/raw/master/manifest.beta.json"
   }
