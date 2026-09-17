@@ -60,7 +60,7 @@ var 配置 = {
  *    我为此白改了好几轮,还有一次跑着旧脚本把当天 7 个角色的表白机会全用光了。
  *    现在启动日志第一行就报这个戳,跟 build.py 打印的对一下就知道装对没有。
  */
-var 构建标记 = "远程 2026.09.17.6";
+var 构建标记 = "远程 2026.09.17.7";
 
 /*
  * ── 用哪个腾讯视频 ──
@@ -2006,7 +2006,14 @@ function 送腾讯回首页() {
         it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK
                   | android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP);
         发Intent(it);            // ← 目标在别的 user(分身)时走 startActivityAsUser
-        sleep(1200);
+        /*
+         * ⚠️ 这 1.2 秒不能干睡:**「拉起 App」这一步厂商一样会弹分身框**
+         *    (2026-09-17 用户视频:拉起腾讯就问要本机还是分身)。
+         *    干睡的话框会一直挂在那儿,下一步全在它后面排队。
+         *    所以边等边过框 —— 没框的机器上这就是个等价的 sleep。
+         */
+        var 到 = Date.now() + 1200;
+        while (Date.now() < 到) { 过分身框(); sleep(200); }
     } catch (e) { 诊("送腾讯回首页出错:" + e); }
 }
 
@@ -2324,6 +2331,11 @@ function 先让开(下一步) {
     var 让开了 = false;
     function 等让开() {
         for (var i = 0; i < 20; i++) {
+            /*
+             * ⚠️ 厂商的分身框一挂,currentPackage() 就不是腾讯了 —— 「让开了」会立刻成立,
+             *    可框还在那儿。早点把它点掉,免得带进下一步。
+             */
+            过分身框();
             if (String(currentPackage()) !== String(腾讯包)) return true;
             sleep(300);
         }
