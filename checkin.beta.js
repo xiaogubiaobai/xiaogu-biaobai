@@ -60,7 +60,7 @@ var 配置 = {
  *    我为此白改了好几轮,还有一次跑着旧脚本把当天 7 个角色的表白机会全用光了。
  *    现在启动日志第一行就报这个戳,跟 build.py 打印的对一下就知道装对没有。
  */
-var 构建标记 = "远程 2026.09.17.8";
+var 构建标记 = "远程 2026.09.17.9";
 
 /*
  * ── 用哪个腾讯视频 ──
@@ -568,6 +568,10 @@ ui.layout(
             <horizontal gravity="center_vertical" padding="14 12">
                 <text id="日志返回" text="‹ 返回" textSize="16sp" textColor="#1a73e8" w="0" layout_weight="1"/>
                 <text id="日志诊断" text="显示诊断" textSize="13sp" textColor="#8a8a8a" padding="8"/>
+                {/* ⚠️ 复制的是**全部含诊断**,不是屏幕上看到的那些 ——
+                    这颗键存在的理由就是「把日志发给维护者」,而诊断行恰恰是最有用的那批。
+                    用户原先只能截图:长了截不全,也没法搜。 */}
+                <text id="日志复制" text="复制" textSize="13sp" textColor="#1a73e8" padding="8"/>
                 <text id="日志清空" text="清空" textSize="13sp" textColor="#b3261e" padding="8"/>
             </horizontal>
             <text h="1" bg="#ececec"/>
@@ -1505,6 +1509,50 @@ ui.看日志.on("click", function () { 去看日志(); });
 
 ui.日志返回.on("click", function () { 当前页 = ""; 刷新状态(); });
 ui.日志诊断.on("click", function () { 看诊断 = !看诊断; 画日志页(); });
+/*
+ * 复制运行日志。
+ *
+ * ⚠️ 复制**全部、含诊断行**,跟屏幕上显示的无关:
+ *    这颗键就是给「发给维护者」用的,而诊断行(候选清单、启动法、任务号、分身框结构)
+ *    恰恰是排障时最值钱的那批,屏幕上默认还是藏着的。
+ * ⚠️ 剪贴板放不下太长的东西(各家上限不一样,通常几百 KB)。太长就**只留最后一段**,
+ *    并在开头说明截掉了多少 —— 日志是越靠后越有用。
+ */
+ui.日志复制.on("click", function () {
+    var 全 = 行;
+    if (!全.length) {
+        try { 全 = (files.exists(日志档) ? files.read(日志档) : "").split(换行符); } catch (e) { 全 = []; }
+    }
+    if (!全.length) { toast("还没有日志"); return; }
+
+    var 上限 = 120000;                       // 字符数,留足余量
+    var 文 = 全.join(换行符);
+    var 说明 = "";
+    if (文.length > 上限) {
+        var 截 = 文.length - 上限;
+        文 = 文.substring(截);
+        // 从第一个换行处切齐,别让开头是半行
+        var 断 = 文.indexOf(换行符);
+        if (断 > 0) 文 = 文.substring(断 + 1);
+        说明 = "(太长,前面 " + 截 + " 个字省略了)" + 换行符;
+    }
+    /*
+     * 抬头带上包名和构建标记:一份日志发过来,先得知道它出自哪个包、哪一版 ——
+     * 正式 / (beta) / (测) 三个包长得一样,光看内容分不出。
+     */
+    var 抬头 = "小菇爱表白 运行日志" + 换行符
+             + context.getPackageName() + " · " + 构建标记
+             + (当前通道() ? " · 通道 " + 当前通道() : "") + 换行符
+             + new Date().toLocaleString() + 换行符 + 换行符;
+    try {
+        setClip(抬头 + 说明 + 文);
+        toast("已复制 " + 全.length + " 行(含诊断),粘贴发给维护者就行");
+    } catch (e) {
+        诊("复制日志出错:" + e);
+        toast("复制不了:" + e);
+    }
+});
+
 ui.日志清空.on("click", function () {
     dialogs.build({ title: "清空日志?", content: "只清记录,不影响已经表白的结果。",
                     positive: "清空", negative: "算了" })
