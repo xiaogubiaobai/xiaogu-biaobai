@@ -1,16 +1,16 @@
 {
   "脚本": {
-    "版本": "2026.09.17.3",
+    "版本": "2026.09.17.4",
     "地址": "https://raw.giteeusercontent.com/flyten1129/xiaogu-biaobai/raw/master/checkin.beta.js",
-    "sha256": "eab6af254f25dae9ca6792aa09265558cff8b84c36fc873418f376288025f6fa",
-    "说明": "beta:分身框按 vivo 的 main/clone id 点;切号那条路也过框;深链不带 setPackage 试着绕开"
+    "sha256": "f2f096f1c4099bb2ea96b20ad7c8d5b6e03f91c34119d378f495944c5bdb5464",
+    "说明": "beta:点框改成先坐标再无障碍并验证有没有点掉(原先只是派发,实际是用户手点的)"
   },
   "APK": {
     "最低版本号": 9,
     "最新版本号": 9,
     "最新版本名": "0.1.7",
     "地址": "https://gitee.com/flyten1129/xiaogu-biaobai/releases/download/beta/xiaogu-biaobai-beta.apk",
-    "sha256": "a91944f9052da0c6391cc428ccfd23e193a2ea717e573f07c3a22cb9980e1a01"
+    "sha256": "ac197b795d7fa70adb6ba19fc59ef7f329224d431fa046d436559f80a0517488"
   },
-  "更新时间": "2026/09/17 08:25"
+  "更新时间": "2026/09/17 08:37"
 }
