@@ -1,18 +1,18 @@
 {
   "脚本": {
-    "版本": "2026.09.17.9",
+    "版本": "2026.09.17.10",
     "地址": "https://raw.githubusercontent.com/xiaogubiaobai/xiaogu-biaobai/main/checkin.beta.js",
-    "sha256": "b3ddf1c518a8253784add95c4b9eeb4ea2a392b9ab776c3e4809f25ccaf77e82",
-    "说明": "beta:运行日志加「复制」(全部含诊断,带包名/版本抬头)"
+    "sha256": "38d5b5b4dc9c808f6057ccc8253903003a711610395218969656cbdf67a68d78",
+    "说明": "beta:认出 vivo 的第二个框 com.vivo.appfilter「想要打开」并按仅打开一次"
   },
   "APK": {
     "最低版本号": 9,
     "最新版本号": 9,
     "最新版本名": "0.1.7",
     "地址": "https://github.com/xiaogubiaobai/xiaogu-biaobai/releases/download/v0.1.7/xiaogu-biaobai.apk",
-    "sha256": "263b44ba8305cdfc2b78e652bb34ade95b82be6e71de977dddb252a81a1d15ba"
+    "sha256": "ad452b80ddc5a7355057a6c68a7425f19726f1ff5ac6944c86b253dfdb42290e"
   },
-  "更新时间": "2026/09/17 09:24",
+  "更新时间": "2026/09/17 14:35",
   "迁移": {
     "新清单地址": "https://raw.giteeusercontent.com/flyten1129/xiaogu-biaobai/raw/master/manifest.beta.json"
   }
