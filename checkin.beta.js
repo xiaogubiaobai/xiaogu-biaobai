@@ -60,7 +60,7 @@ var 配置 = {
  *    我为此白改了好几轮,还有一次跑着旧脚本把当天 7 个角色的表白机会全用光了。
  *    现在启动日志第一行就报这个戳,跟 build.py 打印的对一下就知道装对没有。
  */
-var 构建标记 = "远程 2026.09.17.7";
+var 构建标记 = "远程 2026.09.17.8";
 
 /*
  * ── 用哪个腾讯视频 ──
@@ -1589,6 +1589,7 @@ function 开跑(任务名, 任务) {
                 用目标(目标包们[ti]);   // ⚠️ 目标包们 存的是**键**(包名#user),不能直接赋给 腾讯包
                 深链组件 = {};        // ⚠️ 换了包,深链组件必须重新解析,不然还打到上一个
                 报过启动法 = false;   // 每个目标各报一次启动法(本机和分身走的不是同一条)
+                本轮腾讯任务号 = -1;  // ⚠️ 换实例了,上一个的任务号必须作废
                 已重置过 = false;
                 /*
                  * ⚠️ 换目标 = 换了一个**完全不同的登录态**,期望的账号名必须清掉。
@@ -2289,7 +2290,15 @@ function 前台腾讯任务号(回数) {
                 try {
                     var m = w.getClass().getMethod("getTaskId");
                     m.setAccessible(true);
-                    return m.invoke(w);
+                    /*
+                     * ⚠️⚠️ **必须转成真正的 JS 数字**。invoke 返回的是 java.lang.Integer,
+                     *    Rhino 里 `Integer(28468) !== Integer(28468)` 是 **true**
+                     *    (对象不同),于是「任务号一样」也会被判成「跑到别的实例去了」。
+                     *    踩过:核对实例那次,日志写着「任务号 28468,这一轮该在 28468」
+                     *    却判失败,7 个角色全挂。>= 0 这种关系比较会自动转数字,
+                     *    所以之前一直没暴露 —— 直到用上 !==。
+                     */
+                    return Number(m.invoke(w));
                 } catch (e) { return -1; }
             }
         } catch (e) {}
@@ -2459,18 +2468,68 @@ function 开深链(url) {
  *    先用启动器 Intent 把首页顶成根,深链再叠在上面,就跟人手点进去完全一样。
  * ⚠️ 腾讯已经在跑的话,这一步只是把它切到前台,不花时间;冷启动那几秒本来也躲不掉。
  */
-function 唤醒腾讯(超时毫秒) {
+/*
+ * 这一轮认定的「目标实例」的任务号。-1 = 还不知道(老系统读不到任务号)。
+ *
+ * ⚠️ 为什么需要它:**账号名证明不了我们在哪个实例里** —— 同一个账号完全可以
+ *    同时登在本机和分身,那时两边的「页面账号」一模一样(2026-09-17 用户指出)。
+ *    而任务是**按 user 分的**,本机和分身的腾讯永远在两个不同的 task 里
+ *    (三星实测 28468 / 28469),跟登的是谁无关。
+ */
+var 本轮腾讯任务号 = -1;
+var 说过没任务号 = false;
+
+/*
+ * 用 LauncherApps 把目标实例叫到前台。
+ *
+ * ⚠️ 为什么优先它,而不是 startActivity(启动器 Intent):
+ *    ① 它带**显式 UserHandle**,而且是**被采纳的** —— 桌面自己开分身用的就是这条路,
+ *       起来的一定是我们点名的那个实例。
+ *    ② 厂商的「应用分身」框**不问它**(vivo 实测:弹框的是 ACTION_VIEW 深链和
+ *       普通启动,不是这条)。少一次弹框,也少一次点错实例的机会。
+ * ⚠️ 它**带不了参数**,只能「把它叫起来」,深链还得另发 —— 那一条照样会被问。
+ */
+function 用启动器拉起() {
     try {
-        var it = context.getPackageManager().getLaunchIntentForPackage(腾讯包);
-        if (!it) { 诊("唤醒腾讯:拿不到启动 Intent"); return false; }
-        it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
-        发Intent(it);            // ← 目标在别的 user(分身)时走 startActivityAsUser
-    } catch (e) { 诊("唤醒腾讯出错:" + e); return false; }
+        var la = context.getSystemService(android.content.Context.LAUNCHER_APPS_SERVICE);
+        var uh = 目标UserHandle();
+        if (!la || !uh) return false;
+        var al = la.getActivityList(腾讯包, uh);
+        if (!al || al.size() === 0) return false;
+        la.startMainActivity(al.get(0).getComponentName(), uh, null, null);
+        return true;
+    } catch (e) { 诊("LauncherApps 拉不起来(" + e + "),退回普通启动"); return false; }
+}
+
+function 唤醒腾讯(超时毫秒) {
+    var 走的 = "";
+    if (用启动器拉起()) {
+        走的 = "LauncherApps(指定 user,厂商不问)";
+    } else {
+        try {
+            var it = context.getPackageManager().getLaunchIntentForPackage(腾讯包);
+            if (!it) { 诊("唤醒腾讯:拿不到启动 Intent"); return false; }
+            it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+            发Intent(it);            // ← 目标在别的 user(分身)时走 startActivityAsUser
+            走的 = "启动器 Intent";
+        } catch (e) { 诊("唤醒腾讯出错:" + e); return false; }
+    }
     var 成 = 等到前台(腾讯包, 超时毫秒 || 15000);
     if (成) {
-        var 任务 = 前台腾讯任务号();
-        // 任务号拿不到(Android 13 及以下)就不记,别刷屏
-        if (任务 >= 0) 诊("腾讯到前台,任务号 " + 任务 + "(user " + 腾讯user + ")");
+        /*
+         * ⚠️ 这一刻记下来的任务号,就是「这一轮该待的那个实例」。
+         *    是用 LauncherApps 起的话它百分百可信(user 是我们指定的);
+         *    退回普通启动的话,它至少还能发现「后来跑到另一个实例去了」。
+         */
+        本轮腾讯任务号 = 前台腾讯任务号();
+        if (本轮腾讯任务号 >= 0)
+            诊("腾讯到前台,任务号 " + 本轮腾讯任务号 + "(要的是 user " + 腾讯user
+               + ",走的 " + 走的 + ")");
+        else if (!说过没任务号) {
+            说过没任务号 = true;
+            诊("腾讯到前台(走的 " + 走的 + "),但这台机器读不到任务号"
+               + "(Android 14 以下),只能靠账号名核对实例");
+        }
     }
     return 成;
 }
@@ -3049,6 +3108,23 @@ function 签一个内部(角色) {
     }
     记("  页面指纹:" + 指纹);
     本次指纹 = 指纹;
+
+    /*
+     * 先核对**实例**,再核对账号。
+     *
+     * ⚠️ 顺序不能反,而且账号那道**不能当实例判据用** —— 同一个账号可以同时登在
+     *    本机和分身,那时两边账号名一样,账号核对全程放行,我们却可能在错的实例上表白。
+     *    任务号跟登的是谁无关:任务按 user 分,两个实例永远是两个 task。
+     * ⚠️ 读不到任务号(Android 14 以下)就静默放行 —— 老机器上退回只靠账号核对,
+     *    比直接判失败强。
+     */
+    if (本轮腾讯任务号 >= 0) {
+        var 现任务 = 前台腾讯任务号();
+        if (现任务 >= 0 && 现任务 !== 本轮腾讯任务号) {
+            return "失败:这一页在另一个腾讯实例上(任务号 " + 现任务 + ",这一轮该在 "
+                 + 本轮腾讯任务号 + ")—— 多半是分身选择框被点到了另一条";
+        }
+    }
 
     // 顺手确认这一页属于哪个账号(切号之后尤其重要)
     /*
