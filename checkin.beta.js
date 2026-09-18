@@ -60,7 +60,7 @@ var 配置 = {
  *    我为此白改了好几轮,还有一次跑着旧脚本把当天 7 个角色的表白机会全用光了。
  *    现在启动日志第一行就报这个戳,跟 build.py 打印的对一下就知道装对没有。
  */
-var 构建标记 = "远程 2026.09.19.1";
+var 构建标记 = "远程 2026.09.19.2";
 
 /*
  * ── 用哪个腾讯视频 ──
@@ -2868,6 +2868,62 @@ function 是分身框(包) {
     return false;
 }
 
+/*
+ * ── 认不出来的框怎么办 ──
+ *
+ * 白名单只覆盖我们**见过**的厂商(vivo 的两个)。华为、小米、OPPO、荣耀、一加
+ * 各有各的包名,一个都不知道。认不出来的后果不是「少点一下」,而是**整轮卡死**:
+ * 等到前台一直等不到 → 超时 → 失败,而且**日志里连结构都没有**,查都没法查。
+ * (2026-09-17 的 com.vivo.appfilter 就是这么白白废掉一轮的。)
+ *
+ * 所以加一条**跟厂商无关的处境判据**:
+ *   我刚发了 Intent 想打开腾讯;现在前台既不是腾讯、不是我们自己、也不是桌面
+ *   —— 那前台这个东西八成就是拦路的。
+ * (这几个函数只在「发完 Intent 之后的等待循环」里被调,所以「刚发过 Intent」是天然成立的。)
+ *
+ * ⚠️ 对**疑似**的框要保守:**只抓结构 + 只在证据够硬时才点**
+ *    (认出两条含目标应用名的条目、或认出「仅一次/始终」那类按钮)。
+ *    白名单里那种「只剩一颗 Button 就点它」的兜底**不能**用在未知框上 ——
+ *    万一前台是来电、是某个系统授权框,那一下点下去后果不可控。
+ * ⚠️ 脚本能远程更新:只要结构进了日志,加一条规则是**几分钟**的事,不用发 APK。
+ *    所以这里的目标不是「猜中所有厂商」,而是**保证每次失败都能一次带回全部线索**。
+ */
+var 桌面包们 = null;
+function 是桌面(包) {
+    if (桌面包们 === null) {
+        桌面包们 = {};
+        try {
+            var it = new android.content.Intent(android.content.Intent.ACTION_MAIN);
+            it.addCategory(android.content.Intent.CATEGORY_HOME);
+            var 表 = context.getPackageManager().queryIntentActivities(it, 0);
+            for (var i = 0; i < 表.size(); i++)
+                桌面包们[String(表.get(i).activityInfo.packageName)] = true;
+        } catch (e) { 诊("查桌面包出错:" + e); }
+    }
+    return !!桌面包们[String(包 || "")];
+}
+
+// 这些冒出来不算「拦路」:系统界面(下拉通知栏、音量条)、输入法之类
+var 不算拦路 = ["com.android.systemui", "inputmethod", "ime", "com.android.launcher"];
+
+function 疑似拦路(包) {
+    var p = String(包 || "");
+    if (!p || p === "?" || p === "null") return false;
+    if (p === String(腾讯包)) return false;
+    try { if (p === String(context.getPackageName())) return false; } catch (e) {}
+    if (是桌面(p)) return false;
+    var 小 = p.toLowerCase();
+    for (var i = 0; i < 不算拦路.length; i++) if (小.indexOf(不算拦路[i]) >= 0) return false;
+    return true;
+}
+
+/** 前台在拦路吗。返回 "已知" / "疑似" / "" */
+function 拦路中(包) {
+    if (是分身框(包)) return "已知";
+    if (疑似拦路(包)) return "疑似";
+    return "";
+}
+
 /** 把节点树里「有文字、有描述、或者可点」的节点摊平收出来。最多 40 个,够看了 */
 function 摊平节点(n, 出) {
     if (!n || 出.length >= 40) return;
@@ -2974,7 +3030,7 @@ function 有始终那颗(条) {
     return false;
 }
 
-function 找确认钮(条, 要永久) {
+function 找确认钮(条, 要永久, 保守) {
     var 钮 = [];
     /*
      * 要永久的话,**先找「始终打开」那颗**。找不到再退回「仅一次」——
@@ -3009,6 +3065,8 @@ function 找确认钮(条, 要永久) {
             if (全.indexOf(只此一次词[b]) >= 0) return e;
         if (e.类.indexOf("Button") >= 0) 钮.push(e);
     }
+    // ⚠️ 保守模式(没见过的框)**不用**这条兜底:那一颗到底是什么我们并不知道
+    if (保守) return null;
     return 钮.length === 1 ? 钮[0] : null;          // 只剩一颗没歧义;两颗以上不猜
 }
 
@@ -3052,10 +3110,10 @@ function 结构点(项) {
 function 等框消失(毫秒) {
     var 截止 = Date.now() + (毫秒 || 1500);
     while (Date.now() < 截止) {
-        if (!是分身框(currentPackage())) return true;
+        if (!拦路中(currentPackage())) return true;
         sleep(150);
     }
-    return !是分身框(currentPackage());
+    return !拦路中(currentPackage());
 }
 
 /*
@@ -3085,13 +3143,18 @@ function 点掉框里的(项) {
  */
 function 过分身框() {
     var 包 = String(currentPackage() || "");
-    if (!是分身框(包)) return false;
+    var 类型 = 拦路中(包);
+    if (!类型) return false;
+    var 保守 = (类型 === "疑似");     // 认不出来的框:只在证据够硬时才点
 
     遇框次数++;
     var 条 = 分身框节点(包);
     if (!抓过的框[包]) {
         抓过的框[包] = true;
-        记("  ⚠️ 撞上厂商的拦路框(" + 包 + "),原样抓下来:");
+        记(保守
+           ? "  ⚠️ 前台是「" + 包 + "」—— 既不是腾讯、不是本应用、也不是桌面,"
+             + "当成拦路框处理。它长这样(没见过的框,请把日志发给维护者):"
+           : "  ⚠️ 撞上厂商的拦路框(" + 包 + "),原样抓下来:");
         for (var i = 0; i < 条.length && i < 24; i++) {
             var e = 条[i];
             记("    " + (i + 1) + ". 文[" + e.文 + "] 述[" + e.描 + "] " + e.类
@@ -3149,7 +3212,12 @@ function 过分身框() {
              *    按一次「始终打开」以后就不再问,否则一轮被打断几十次。
              *    授的权只是「本 App 能打开腾讯视频」,正是用户按下「开始表白」要的事。
              */
-            var 钮 = 找确认钮(条, true);
+            /*
+             * ⚠️ 未知框传 `保守=true`:不许用「只剩一颗 Button 就点它」那条兜底。
+             *    万一前台是来电、是某个系统授权框,那一下点下去后果不可控。
+             *    认得出「仅一次/始终」那类文字才点,认不出就只留结构给日志。
+             */
+            var 钮 = 找确认钮(条, true, 保守);
             if (钮) {
                 点过分身框++;
                 var 说一次 = 点过分身框 <= 2;
@@ -3202,9 +3270,10 @@ function 过分身框() {
      * ⚠️ 这类框是**两步**的:点完条目框还在,要再按一次「仅此一次」。
      *    演练(三星系统选择器)就卡在这一步 —— 少了它等于白点。
      */
-    if (是分身框(currentPackage())) {
+    if (拦路中(currentPackage())) {
         var 条2 = 分身框节点(String(currentPackage()));
-        var 钮 = 找确认钮(条2);
+        // 同样:没见过的框走保守,不用「只剩一颗 Button」那条兜底
+        var 钮 = 找确认钮(条2, false, 保守);
         if (钮) {
             记("    框还在,再按一下「" + (钮.文 || 钮.描) + "」:" + 点掉框里的(钮));
         } else {
@@ -3243,7 +3312,7 @@ function 去角色页(链, 页面名, 总超时) {
                 : ("别的App:" + 前包);
             记("  还没到位(" + 现在 + "),重发深链");
             // ⚠️ 框本身由 过分身框() 处理(抓结构 + 尽量替用户点),这里只多给一句出路
-            if (是分身框(前包))
+            if (拦路中(前包))
                 记("     (框里有「记住/默认」就勾上;也可以到系统设置的「应用分身」里关掉询问)");
             try { 开深链(链); } catch (e) {}
         }
