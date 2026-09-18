@@ -60,7 +60,7 @@ var 配置 = {
  *    我为此白改了好几轮,还有一次跑着旧脚本把当天 7 个角色的表白机会全用光了。
  *    现在启动日志第一行就报这个戳,跟 build.py 打印的对一下就知道装对没有。
  */
-var 构建标记 = "远程 2026.09.19.2";
+var 构建标记 = "远程 2026.09.19.3";
 
 /*
  * ── 用哪个腾讯视频 ──
@@ -371,7 +371,13 @@ ui.layout(
                 <text id="设置箭头" text="⌄" textSize="15sp" textColor="#8a8a8a"/>
             </horizontal>
             <vertical id="权限区">
-                <horizontal id="行无障碍" h="64" gravity="center_vertical">
+                {/*
+                    ⚠️ 设置行**一律 h="auto" + padding**,别写死高度。
+                       系统字体放大(font_scale 1.5 很常见,尤其是我们这批用户)时,
+                       固定 h="64" 会把副标题裁掉半行 —— 实测「可选 · 跑的时候看进度、随…」
+                       就这么断在屏幕上,而在默认字体下完全看不出来。
+                */}
+                <horizontal id="行无障碍" h="auto" gravity="center_vertical" padding="0 10">
                     <vertical w="0" layout_weight="1">
                         <text text="无障碍服务" textSize="15sp" textColor="#1f1f1f"/>
                         <text text="必需 · 读页面、点按钮" textSize="12sp" textColor="#8a8a8a"/>
@@ -405,7 +411,22 @@ ui.layout(
                 </vertical>
 
 <text h="1" bg="#ececec"/>
-                <horizontal id="行悬浮" h="64" gravity="center_vertical">
+                {/*
+                    ⚠️ 平时**藏着**。只有真检测到「深链发了没反应、又没有任何拦路框」
+                       才冒出来 —— 大多数手机没有这个毛病,常驻只会让人困惑。
+                       检测逻辑见 疑似被挡住(),文案别写死某一家的叫法(各家不一样)。
+                */}
+                {/* ⚠️ 这一行**别写死高度**:标题带 ⚠️、副标题要列三家叫法,固定 h 一定裁字
+                       (第一版写 h="72",副标题被切掉一半)。用 auto + padding 让它自己长。 */}
+                <horizontal id="行后台弹出" h="auto" gravity="center_vertical" padding="0 10">
+                    <vertical w="0" layout_weight="1">
+                        <text text="⚠️ 跳转被系统挡住" textSize="15sp" textColor="#b3261e"/>
+                        <text text="小米「后台弹出界面」· 华为「关联启动」· OPPO「后台弹窗」"
+                              textSize="12sp" textColor="#8a8a8a"/>
+                    </vertical>
+                    <text text="去开启 ›" textSize="14sp" textColor="#1a73e8" padding="8 0 0 0"/>
+                </horizontal>
+                <horizontal id="行悬浮" h="auto" gravity="center_vertical" padding="0 10">
                     <vertical w="0" layout_weight="1">
                         <text text="悬浮窗" textSize="15sp" textColor="#1f1f1f"/>
                         <text text="可选 · 跑的时候看进度、随时暂停" textSize="12sp" textColor="#8a8a8a"/>
@@ -419,7 +440,7 @@ ui.layout(
                      通知有两层:系统权限(要不要给)+ App 自己的偏好(跑完发不发)。
                      后者是我们自己的事,该给开关。
                 */}
-                <horizontal id="行通知" h="64" gravity="center_vertical">
+                <horizontal id="行通知" h="auto" gravity="center_vertical" padding="0 10">
                     <vertical w="0" layout_weight="1">
                         <text text="跑完发通知" textSize="15sp" textColor="#1f1f1f"/>
                         <text id="通知说明" text="把结果发到通知栏" textSize="12sp" textColor="#8a8a8a"/>
@@ -440,7 +461,7 @@ ui.layout(
                 */}
                 <vertical id="行目标区" visibility="gone">
                     <text h="1" bg="#ececec"/>
-                    <horizontal id="行目标" h="64" gravity="center_vertical">
+                    <horizontal id="行目标" h="auto" gravity="center_vertical" padding="0 10">
                         <vertical w="0" layout_weight="1">
                             <text text="操作对象" textSize="15sp" textColor="#1f1f1f"/>
                             <text id="态目标说明" text="" textSize="12sp" textColor="#8a8a8a"/>
@@ -545,7 +566,7 @@ ui.layout(
                     {/* 只有当系统里不止一个应用能处理 txvideo:// 时才出现 */}
                     {/* ⚠️ 只有加载器认这个开关的包才显示(见 有自动查开关 那个记号)。
                         老包拉到新脚本也不会画出来 —— 画了就是个死开关 */}
-                    <horizontal id="行自动查" h="56" gravity="center_vertical" visibility="gone">
+                    <horizontal id="行自动查" h="auto" gravity="center_vertical" padding="0 10" visibility="gone">
                         <vertical layout_weight="1">
                             <text text="自动查更新" textSize="15sp" textColor="#1f1f1f"/>
                             <text id="自动查说明" text="" textSize="12sp" textColor="#8a8a8a"/>
@@ -1077,6 +1098,8 @@ function 刷新状态() {
                 + " · 悬浮窗 " + (悬浮 ? "已开" : "未开")
                 + " · 通知 " + (通知 ? (想要通知() ? "开" : "关") : "未开"));
         }
+        // 只有真撞上过才显示,而且跑动时不显示(跑动时整块设置都收起来)
+        ui.行后台弹出.setVisibility((疑似被挡 && !跑着) ? 显 : 隐);
         ui.权限区.setVisibility((跑着 || !实际张开) ? 隐 : 显);
         ui.状态.setVisibility(跑着 ? 显 : 隐);
         写状态(ui.态无障碍, 开了);
@@ -1576,6 +1599,23 @@ ui.设置标题行.on("click", function () {
     try { if (偏好) 偏好.put("设置展开", 展开设置); } catch (e) {}
     刷新状态();
 });
+/*
+ * 「跳转可能被系统挡住」那一行。
+ * ⚠️ 各家把这个开关放在不同地方(小米在「权限管理 → 其他权限」,华为在「启动管理」),
+ *    没有通用的直达 Intent。所以跳**应用详情页** —— 那是所有 Android 都有的,
+ *    再让用户从那儿进去找。文案里把三家的叫法都写上,免得他不知道找什么。
+ */
+ui.行后台弹出.on("click", function () {
+    try {
+        var it = new android.content.Intent(
+            android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            android.net.Uri.parse("package:" + context.getPackageName()));
+        it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+        context.startActivity(it);
+        toast("找「权限」或「启动管理」,把「后台弹出界面 / 关联启动 / 后台弹窗」打开");
+    } catch (e) { toast("打不开应用详情页:" + e); }
+});
+
 ui.行悬浮.on("click", function () { 求悬浮窗(); });
 /*
  * 没拿到系统权限时,整行可点 —— 那时它显示的是「未开启 ›」,跟上面两行同一个语义。
@@ -1604,6 +1644,8 @@ function 开跑(任务名, 任务) {
     当前账号名 = ""; 轮次前缀 = "";     // 用户可能手动切过号,重新认一次
     账号进度 = ""; 账号名显示 = "";
     抓过的框 = {}; 点过分身框 = 0; 说过认不出 = {}; 说过始终提示 = false;
+    // ⚠️ 每轮重来:跑成功了这一行就自然消失,不用用户手动关
+    疑似被挡 = false;
     遇框次数 = 0; 点掉了次数 = 0; 没点掉次数 = 0;
     报过深链形状 = false;
     上次候选描述 = "";                    // 每一轮的日志里都要有那行 profile/候选清单
@@ -2858,6 +2900,17 @@ var 抓过的框 = {};
 var 点过分身框 = 0;        // 这一轮替用户点了几次(vivo 是每发一次深链弹一次,十几次很正常)
 var 说过认不出 = {};       // 「认不出这个框该点哪」——按包名各说一次(同上)
 var 遇框次数 = 0;          // 这一轮一共撞上几次框 —— 用来比较「不带 setPackage」有没有用
+/*
+ * 「跳转被系统静默挡掉」的嫌疑。
+ *
+ * ⚠️ 小米/红米的「后台弹出界面」、华为的「关联启动」、OPPO/一加的「后台弹窗」——
+ *    关掉之后,App **在后台** startActivity 会被**静默丢弃**:不抛异常、没有框、
+ *    什么都不发生。而我们除了第一次唤醒,后面每一条深链都是在后台发的
+ *    (前台是腾讯),所以这类机器上会表现成「第一个角色就卡住,而且毫无线索」。
+ * ⚠️ 判据必须**同时**满足:深链重发到头了 + 腾讯就在前台(说明 App 是活的)
+ *    + 这一路**一个拦路框都没撞上**(撞上了那就是框的锅,不是这个)。
+ */
+var 疑似被挡 = false;
 var 点掉了次数 = 0, 没点掉次数 = 0;   // ⚠️ 要分开记:分不清的话,「其实是用户自己手点的」这种事会被当成成功
 
 function 是分身框(包) {
@@ -3290,6 +3343,7 @@ function 过分身框() {
 }
 
 function 去角色页(链, 页面名, 总超时) {
+    var 进来时的框数 = 遇框次数;      // 用来判断「这一路有没有撞上框」,见函数末尾
     try { 开深链(链); } catch (e) { 记("  发深链出错:" + e); return null; }
     var 截止 = Date.now() + 总超时;
     var 重发 = 0, 上次重发 = Date.now();
@@ -3317,6 +3371,21 @@ function 去角色页(链, 页面名, 总超时) {
             try { 开深链(链); } catch (e) {}
         }
         sleep(250);
+    }
+    /*
+     * 走到这儿 = 这个角色没到位。如果**腾讯就在前台**、这一路**一个框都没撞上**,
+     * 那多半不是页面慢,是**跳转根本没被投递** —— 见 疑似被挡 那段注释。
+     */
+    if (!疑似被挡 && 重发 >= 1 && 遇框次数 === 进来时的框数
+        && String(currentPackage()) === String(腾讯包)) {
+        疑似被挡 = true;
+        记("  ⚠️ 深链发了 " + (重发 + 1) + " 次,腾讯就在前台却一直没跳页,"
+           + "而且一个拦路框都没出现。");
+        记("     这台手机很可能把**后台跳转**挡掉了(小米/红米叫「后台弹出界面」,"
+           + "华为叫「关联启动」,OPPO/一加叫「后台弹窗」)——");
+        记("     被挡的时候系统**什么都不报**,脚本这边只看到「发了没反应」。");
+        记("     回本应用首页,顶上会多一行「跳转可能被系统挡住」,点它去开。");
+        try { 刷新状态(); } catch (e) {}
     }
     return null;
 }
