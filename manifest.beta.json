@@ -1,18 +1,18 @@
 {
   "脚本": {
-    "版本": "2026.09.17.13",
+    "版本": "2026.09.19.1",
     "地址": "https://raw.githubusercontent.com/xiaogubiaobai/xiaogu-biaobai/main/checkin.beta.js",
-    "sha256": "b8524b03e69bc91aff8198f29c04eae01e053e4f6295be886e7a664bed584f62",
-    "说明": "beta:每种拦路框各抓一次结构(appfilter 那个原先抓不到)"
+    "sha256": "d0f97af14c81ea79ce5ee9b04f5b75bb447815b4794870ccaa08563bd6e1b7cc",
+    "说明": "beta:日志加机型(排障时能知道是什么手机)"
   },
   "APK": {
     "最低版本号": 9,
     "最新版本号": 9,
     "最新版本名": "0.1.7",
     "地址": "https://github.com/xiaogubiaobai/xiaogu-biaobai/releases/download/v0.1.7/xiaogu-biaobai.apk",
-    "sha256": "97377b10802ec46957f8567e7e5495c8c8247646e04cc4f246b9b11436af8c67"
+    "sha256": "21538779a1b94ff7dcc59991ed37e59b27480c5ce3f5e62e65b580f76506b30d"
   },
-  "更新时间": "2026/09/17 15:19",
+  "更新时间": "2026/09/19 06:28",
   "迁移": {
     "新清单地址": "https://raw.giteeusercontent.com/flyten1129/xiaogu-biaobai/raw/master/manifest.beta.json"
   }
