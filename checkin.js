@@ -60,7 +60,7 @@ var 配置 = {
  *    我为此白改了好几轮,还有一次跑着旧脚本把当天 7 个角色的表白机会全用光了。
  *    现在启动日志第一行就报这个戳,跟 build.py 打印的对一下就知道装对没有。
  */
-var 构建标记 = "远程 2026.09.16.1";
+var 构建标记 = "远程 2026.09.20.1";
 
 /*
  * ── 用哪个腾讯视频 ──
@@ -82,31 +82,116 @@ var 默认腾讯包 = "com.tencent.qqlive";
  *    (国际版、改过包名的版本),每个里面登着不同的号。选两个就第一个全跑完再跑第二个。
  * ⚠️ 只选一个时,行为跟以前**完全一样**(长度为 1 的循环)。
  */
-var 目标包们 = [];
+var 目标包们 = [];               // 存的是**键**(包名#user),不是纯包名
 var 腾讯包 = 默认腾讯包;          // 启动时由 定腾讯包() 改写
 
-/** 问系统:哪些应用能处理我们的深链。返回 [{包名, 名字, 版本}] */
+/*
+ * ── 为什么目标要带 user ──
+ * 分身(应用双开)跟本尊是**同一个包名、同一个 ComponentName**,只有 UserHandle 不同。
+ * 所以光靠包名根本区分不了两者 —— 列表里会出现两个一模一样的「腾讯视频」。
+ * 能区分的是 uid:Android 的规则是 uid = userId * 100000 + appId,
+ * 所以 uid / 100000 就是它属于哪个 user(本尊 0,三星分身 95,MIUI 双开一般 999)。
+ */
+var 我的user = 0;
+try { 我的user = Math.floor(android.os.Process.myUid() / 100000); } catch (e) {}
+var 腾讯user = 我的user;
+
+function 拼键(包名, user) { return 包名 + "#" + user; }
+function 拆键(键) {
+    var t = String(键 || ""), i = t.indexOf("#");
+    if (i < 0) return { 包名: t, user: 我的user };   // 旧版存的是纯包名
+    var u = parseInt(t.substring(i + 1), 10);
+    return { 包名: t.substring(0, i), user: isNaN(u) ? 我的user : u };
+}
+function 用目标(键) {
+    var t = 拆键(键);
+    腾讯包 = t.包名;
+    腾讯user = t.user;
+}
+
+/*
+ * 问系统:**所有 user 里**哪些实例能处理我们的深链。
+ * 返回 [{键, 包名, user, 名字, 版本, 是本机}]
+ *
+ * ⚠️ 两步走,不能一步:
+ *    queryIntentActivities **只看本 user**,分身永远不出现在里面。
+ *    所以先用它拿到「有哪些包能处理」,再用 LauncherApps 逐个 profile 查「这个包装没装」。
+ * ⚠️ 名字必须用 LauncherActivityInfo.getLabel(),**不能**用 ResolveInfo.loadLabel() ——
+ *    后者给的是 **activity 标签**,实测在 AutoJs 类 App 上返回「スクリプトの編集」
+ *    这种东西,不是应用名。踩过。
+ * ⚠️ 三星上分身的 label 跟本尊**一模一样**(vivo 才加「Ⅱ.」前缀),
+ *    首次安装时间也一样(install-existing 共用同一份 APK)——
+ *    所以界面上必须标出 user 号,不能指望名字能区分。
+ */
+var 上次候选描述 = "";     // 见 腾讯候选() 末尾:同样的内容不重复刷日志
+
 function 腾讯候选() {
-    var 出 = [];
+    var 出 = [], 包们 = [], 见过 = {};
+    var pm = context.getPackageManager();
     try {
         var it = new android.content.Intent(android.content.Intent.ACTION_VIEW,
             android.net.Uri.parse("txvideo://v.qq.com/TopicFeedsPageActivity"));
-        var pm = context.getPackageManager();
         var 表 = pm.queryIntentActivities(it, 0);
-        var 见过 = {};
         for (var i = 0; i < 表.size(); i++) {
-            var 包名 = String(表.get(i).activityInfo.packageName);
-            if (见过[包名]) continue;
-            见过[包名] = true;
-            var 名字 = 包名, 版本 = "?";
-            try {
-                var ai = pm.getApplicationInfo(包名, 0);
-                名字 = String(pm.getApplicationLabel(ai));
-                版本 = String(pm.getPackageInfo(包名, 0).versionName);
-            } catch (e) {}
-            出.push({ 包名: 包名, 名字: 名字, 版本: 版本 });
+            var p = String(表.get(i).activityInfo.packageName);
+            if (!见过[p]) { 见过[p] = true; 包们.push(p); }
         }
-    } catch (e) { 诊("查腾讯候选出错:" + e); }
+    } catch (e) { 诊("查能处理深链的包出错:" + e); }
+
+    function 版本号(包) {
+        try { return String(pm.getPackageInfo(包, 0).versionName); } catch (e) { return "?"; }
+    }
+    /*
+     * ⚠️ 这一行日志是**排障的命根子**。分身的 user 号各家不一样
+     * (三星 DUALAPP 95、MIUI 双开 999、手机分身 11 …),代码里哪儿都没写死,
+     * 靠的就是 getProfiles() 枚举出来什么算什么。
+     * 但「枚举到了什么」不打出来的话,用户报「操作对象里只有一个」时根本分不出是
+     *   ① 这台机器的分身**不是**独立 user(厂商用容器实现,LauncherApps 看不见)
+     *   ② 还是我们哪一步把它漏了
+     * —— 这两种要改的东西完全不同。
+     */
+    var 侧写们 = [];
+    try {
+        var la = context.getSystemService(android.content.Context.LAUNCHER_APPS_SERVICE);
+        var ps = la.getProfiles();
+        for (var u = 0; u < ps.size(); u++) {
+            var uh = ps.get(u);
+            try { 侧写们.push(String(uh)); } catch (e) { 侧写们.push("?"); }
+            for (var k = 0; k < 包们.length; k++) {
+                var 包 = 包们[k], al = null;
+                try { al = la.getActivityList(包, uh); } catch (e) { continue; }
+                if (!al || al.size() === 0) continue;       // 这个 user 里没装
+                var lai = al.get(0), 名字 = 包, uid = -1;
+                try { 名字 = String(lai.getLabel()); } catch (e) {}
+                try { uid = lai.getApplicationInfo().uid; } catch (e) {}
+                var uu = uid >= 0 ? Math.floor(uid / 100000) : 我的user;
+                出.push({ 键: 拼键(包, uu), 包名: 包, user: uu, 名字: 名字,
+                          版本: 版本号(包), 是本机: uu === 我的user });
+            }
+        }
+    } catch (e) { 诊("跨 profile 枚举出错:" + e); }
+
+    var 描述 = [];
+    for (var d = 0; d < 出.length; d++)
+        描述.push("[" + 出[d].键 + " 名=" + 出[d].名字 + " " + 出[d].版本
+                  + (出[d].是本机 ? " 本机" : " 分身") + "]");
+    // ⚠️ 只在**内容变了**才记。腾讯候选() 一轮里会被叫好几次(界面状态行也用它),
+    //    每次都打就是一行两百多字刷四遍,真正要看的东西反而被埋了。
+    var 这句 = "我在 user " + 我的user + ";系统 profile " + (侧写们.join(",") || "(枚举不到)")
+             + ";能处理深链的包 " + 包们.join(",")
+             + ";操作对象候选 " + 出.length + " 个:" + 描述.join(" ");
+    if (这句 !== 上次候选描述) { 上次候选描述 = 这句; 诊(这句); }
+
+    // 兜底:LauncherApps 整个用不了(老系统/定制系统)时,退回「只看本 user」
+    if (!出.length) {
+        诊("LauncherApps 那条路一个都没枚举到,退回「只看本 user」");
+        for (var m = 0; m < 包们.length; m++) {
+            var 名2 = 包们[m];
+            try { 名2 = String(pm.getApplicationLabel(pm.getApplicationInfo(包们[m], 0))); } catch (e) {}
+            出.push({ 键: 拼键(包们[m], 我的user), 包名: 包们[m], user: 我的user,
+                      名字: 名2, 版本: 版本号(包们[m]), 是本机: true });
+        }
+    }
     return 出;
 }
 
@@ -121,15 +206,36 @@ function 定目标们() {
     var 记住 = [];
     try { if (偏好) 记住 = String(偏好.get("目标包们", "") || "").split(","); } catch (e) {}
     var 在 = {};
-    for (var i = 0; i < 候选.length; i++) 在[候选[i].包名] = true;
+    for (var i = 0; i < 候选.length; i++) 在[候选[i].键] = true;
     目标包们 = [];
-    for (var k = 0; k < 记住.length; k++)
-        if (记住[k] && 在[记住[k]] && 目标包们.indexOf(记住[k]) < 0) 目标包们.push(记住[k]);
+    for (var k = 0; k < 记住.length; k++) {
+        var 键 = String(记住[k] || "");
+        if (!键) continue;
+        if (键.indexOf("#") < 0) 键 = 拼键(键, 我的user);   // 旧版存的是纯包名,迁移
+        if (在[键] && 目标包们.indexOf(键) < 0) 目标包们.push(键);
+    }
     if (!目标包们.length) {
         定腾讯包();                       // 没选过:沿用「单个目标」那套(含旧版记住的那个)
-        目标包们 = [腾讯包];
+        /*
+         * ⚠️ **有分身就默认两个都选上。**
+         *    原先只选本机那一个 —— 可装了分身的人,两个实例里通常各自登着号,
+         *    默认只跑一个等于默默漏掉一半;而「操作对象」又藏在设置里,
+         *    他多半根本不知道还有得选(用户反馈)。
+         * ⚠️ 只收**同一个包**的实例。别把别的 App 也勾上 ——
+         *    能处理 txvideo:// 的不止腾讯视频(开发机上还有两个假目标 App,
+         *    真实机器上可能是第三方播放器),全勾等于去操作一堆无关的东西。
+         * ⚠️ 本机排在前面:用目标(目标包们[0]) 要拿它定 腾讯包,而且先跑本机再跑分身
+         *    跟原来的行为一致。
+         */
+        for (var c = 0; c < 候选.length; c++)
+            if (String(候选[c].包名) === String(腾讯包) && 候选[c].是本机
+                && 目标包们.indexOf(候选[c].键) < 0) 目标包们.push(候选[c].键);
+        for (var c2 = 0; c2 < 候选.length; c2++)
+            if (String(候选[c2].包名) === String(腾讯包) && !候选[c2].是本机
+                && 目标包们.indexOf(候选[c2].键) < 0) 目标包们.push(候选[c2].键);
+        if (!目标包们.length) 目标包们 = [拼键(腾讯包, 我的user)];
     }
-    腾讯包 = 目标包们[0];
+    用目标(目标包们[0]);
     return 候选;
 }
 
@@ -143,10 +249,16 @@ function 定腾讯包() {
     if (!候选.length) { 腾讯包 = 默认腾讯包; return 候选; }
     var 记住的 = "";
     try { if (偏好) 记住的 = String(偏好.get("腾讯包", "") || ""); } catch (e) {}
-    for (var i = 0; i < 候选.length; i++) {
-        if (候选[i].包名 === 记住的) { 腾讯包 = 记住的; return 候选; }
+    // ⚠️ 这条老路只管**本机**那些 —— 它是给「没选过操作对象」的人兜底的,
+    //    默认不该把人直接扔进分身。
+    var 本机 = [];
+    for (var i = 0; i < 候选.length; i++) if (候选[i].是本机) 本机.push(候选[i]);
+    if (!本机.length) 本机 = 候选;
+    for (var j = 0; j < 本机.length; j++) {
+        if (本机[j].包名 === 记住的) { 腾讯包 = 记住的; 腾讯user = 本机[j].user; return 候选; }
     }
-    腾讯包 = 候选[0].包名;         // 没记住过、或记的那个已经不在了
+    腾讯包 = 本机[0].包名;         // 没记住过、或记的那个已经不在了
+    腾讯user = 本机[0].user;
     return 候选;
 }
 var 角色页Activity = "TopicFeedsPageActivity";
@@ -159,13 +271,28 @@ var 角色页Activity = "TopicFeedsPageActivity";
  * ⚠️ 不要写 /sdcard/xxx.txt。那属于共享存储,写它就得要 MANAGE_EXTERNAL_STORAGE
  *    (「所有文件访问权限」)—— 一个签到工具要这种权限,用户看了会怕。
  */
-var 日志档 = (function () {
-    try {
-        return files.join(context.getExternalFilesDir(null).getAbsolutePath(), "checkin_log.txt");
-    } catch (e) {
-        return "/sdcard/qq_checkin_log.txt";
-    }
+var 日志目录 = (function () {
+    try { return String(context.getExternalFilesDir(null).getAbsolutePath()); }
+    catch (e) { return "/sdcard"; }
 })();
+var 日志档 = files.join(日志目录, "checkin_log.txt");
+/*
+ * 上一次运行的日志。
+ *
+ * ⚠️ 为什么非留不可:开跑会把日志清空,而用户的真实顺序是
+ *    「跑挂了 → 再跑一次试试 → 还是不行 → 才想起来要报障」——
+ *    等他开口的时候,**真正出事的那一份已经被他自己覆盖掉了**。
+ *    所以开跑前先把上一次挪到这儿(见 存档上一次),报障时两份一起发。
+ */
+var 日志档上一次 = files.join(日志目录, "checkin_log.prev.txt");
+/*
+ * 加载器(loader.js)的日志。
+ *
+ * ⚠️ 更新链路 —— 拉清单、校验 sha256、换版本、退回内置、自动查开没开 ——
+ *    全写在这个档里,而它**在界面上一行都看不到**,以前从来没到过维护者手里。
+ *    「为什么我没收到新版」这类问题的答案就在里面。报障时带上尾巴。
+ */
+var 加载日志档 = files.join(日志目录, "loader_log.txt");
 
 /*
  * 日志前缀:每行都标明「这一步发生在哪个账号上」,多账号时再加「第几轮/共几轮」。
@@ -189,6 +316,9 @@ var 上次结果 = "";            // 跑完留在界面上的那行结果,见布
 var 本轮报过页面账号 = false;   // 见 签一个:每轮至少把读到的页面账号报一次
 var 轮摘要 = [];          // 多账号时每个号一条摘要,结束一起发通知
 var 多账号进行中 = false;  // 多账号模式下,单轮结束不要把本 App 拉回前台(见 跑一轮 末尾)
+// 多目标时:这个目标后面还有没有别的目标要跑。同理,后面还有就别把本 App 拉回前台 ——
+// 用户反馈「第一个跑完 App 就弹到前面,以为整个跑完了」。见 跑一轮 / 跑全部账号 末尾。
+var 还有下一个目标 = false;
 var 当前账号名 = "";     // 从角色页的「我的贡献」里读出来的,也用来核对页面属于哪个号
 var 轮次前缀 = "";       // 「2/3 」,单号模式为空
 
@@ -209,18 +339,80 @@ function 诊(s) { 记(s, true); }
  *    getHours() 本来就是 24 小时制,不用额外处理。
  */
 function 两位(n) { return ("0" + n).slice(-2); }
+/*
+ * ⚠️ 年份只取两位。每行日志前面都顶着一个戳,四位年白占 2 个字 ——
+ *    一轮几百行,而这两个字从来没帮过任何忙(日志跨年的场景不存在)。
+ */
 function 时间戳(t) {
     t = t || new Date();
-    return t.getFullYear() + "/" + 两位(t.getMonth() + 1) + "/" + 两位(t.getDate())
+    return 两位(t.getFullYear() % 100) + "/" + 两位(t.getMonth() + 1) + "/" + 两位(t.getDate())
          + " " + 两位(t.getHours()) + ":" + 两位(t.getMinutes());
 }
 
+/*
+ * 往档里补一行。
+ *
+ * ⚠️ 不要用 files.append —— 它在**后台线程里会挂死**,而 记() 绝大多数时候
+ *    正是在跑签到的那条后台线程上调的(loader.js 文件头那条警告就是为这个,查了很久)。
+ *    裸 java.io.FileWriter 两条线程都安全。
+ * ⚠️ 也别退回原先那句 files.write(日志档, 行.join(换行符)) —— 那是**每写一行就把整档
+ *    重写一遍**:一轮几百行 = 几百次全量写,而且越写到后面单次越慢(O(n²))。
+ */
+function 追加(档, 文) {
+    try {
+        var w = new java.io.FileWriter(档, true);
+        w.write(文);
+        w.close();
+    } catch (e) {}
+}
+
+/*
+ * 开跑前把上一次的运行日志挪到 .prev —— 理由见 日志档上一次 那段注释。
+ * ⚠️ 用 renameTo,不要「读出来再写过去」:日志可能几百 KB,而且这一步卡在开跑路上。
+ */
+function 存档上一次() {
+    try {
+        var 旧 = new java.io.File(日志档);
+        if (!旧.exists() || 旧.length() <= 0) return;
+        var 存 = new java.io.File(日志档上一次);
+        if (存.exists()) 存["delete"]();
+        旧.renameTo(存);
+    } catch (e) {}
+}
+
+/*
+ * 这个会话**第一次**往档里写之前要做两件事。
+ *
+ * ⚠️ ① 上一版是「整档重写」(files.write(行.join(换行符))),写出来的档**结尾没有换行**。
+ *      直接追加会把新一行黏在旧的最后一行屁股上,变成一行怪东西 —— 实测第一次就撞上了。
+ *      装了新版之后这一支只会命中一次,以后每行都自带换行。
+ * ⚠️ ② 顺手封顶。正常情况下 开跑() 每轮都会把这个档挪走重开,只有「反复开 App
+ *      但从来不跑」才会一点点长 —— 那也得有个头,否则又是一个没人清的档(见 loader.js)。
+ */
+var 日志档上限 = 512 * 1024;
+var 开过档了 = false;
+function 开档() {
+    开过档了 = true;
+    try {
+        var f = new java.io.File(日志档);
+        if (f.length() > 日志档上限) { 存档上一次(); return; }   // 太肥就整份挪去 prev,重开一份
+        if (f.length() <= 0) return;
+        var r = new java.io.RandomAccessFile(f, "r");
+        r.seek(f.length() - 1);
+        var 尾 = r.read();
+        r.close();
+        if (尾 !== 10) 追加(日志档, 换行符);                      // 10 = 换行
+    } catch (e) {}
+}
+
 function 记(s, 是诊断) {
+    if (!开过档了) 开档();
     var 戳 = 时间戳();
     var 头 = (轮次前缀 || 当前账号名) ? "[" + 轮次前缀 + 当前账号名 + "]" : "";
-    行.push("[" + 戳 + "]" + (是诊断 ? 诊断标记 : "") + 头 + " " + s);
+    var 一行 = "[" + 戳 + "]" + (是诊断 ? 诊断标记 : "") + 头 + " " + s;
+    行.push(一行);
     console.log(s);
-    try { files.write(日志档, 行.join(换行符)); } catch (e) {}
+    追加(日志档, 一行 + 换行符);
     刷日志();
 }
 
@@ -264,7 +456,12 @@ ui.layout(
                  不可点的东西就不该长成可点的样子。
               ⚠️ 收起时标题下面补一行摘要,别让三个状态凭空消失。
             */}
-            <horizontal id="设置标题行" h="52" gravity="center_vertical">
+            {/*
+                ⚠️ 这一行**别写死高度**(见铁律 0 —— 当初那一轮把它漏了)。
+                   h="52" 装不下两行:摘要现在多了「操作对象 N 个」,一行放不下就被
+                   直接截断成「… · 操作」,后面凭空消失。字体放大的机器上更早断。
+            */}
+            <horizontal id="设置标题行" h="auto" padding="0 14" gravity="center_vertical">
                 <vertical w="0" layout_weight="1">
                     <text text="设置" textSize="16sp" textColor="#1f1f1f"/>
                     <text id="设置摘要" text="" textSize="12sp" textColor="#8a8a8a"
@@ -273,7 +470,13 @@ ui.layout(
                 <text id="设置箭头" text="⌄" textSize="15sp" textColor="#8a8a8a"/>
             </horizontal>
             <vertical id="权限区">
-                <horizontal id="行无障碍" h="64" gravity="center_vertical">
+                {/*
+                    ⚠️ 设置行**一律 h="auto" + padding**,别写死高度。
+                       系统字体放大(font_scale 1.5 很常见,尤其是我们这批用户)时,
+                       固定 h="64" 会把副标题裁掉半行 —— 实测「可选 · 跑的时候看进度、随…」
+                       就这么断在屏幕上,而在默认字体下完全看不出来。
+                */}
+                <horizontal id="行无障碍" h="auto" gravity="center_vertical" padding="0 10">
                     <vertical w="0" layout_weight="1">
                         <text text="无障碍服务" textSize="15sp" textColor="#1f1f1f"/>
                         <text text="必需 · 读页面、点按钮" textSize="12sp" textColor="#8a8a8a"/>
@@ -307,7 +510,22 @@ ui.layout(
                 </vertical>
 
 <text h="1" bg="#ececec"/>
-                <horizontal id="行悬浮" h="64" gravity="center_vertical">
+                {/*
+                    ⚠️ 平时**藏着**。只有真检测到「深链发了没反应、又没有任何拦路框」
+                       才冒出来 —— 大多数手机没有这个毛病,常驻只会让人困惑。
+                       检测逻辑见 疑似被挡住(),文案别写死某一家的叫法(各家不一样)。
+                */}
+                {/* ⚠️ 这一行**别写死高度**:标题带 ⚠️、副标题要列三家叫法,固定 h 一定裁字
+                       (第一版写 h="72",副标题被切掉一半)。用 auto + padding 让它自己长。 */}
+                <horizontal id="行后台弹出" h="auto" gravity="center_vertical" padding="0 10">
+                    <vertical w="0" layout_weight="1">
+                        <text text="⚠️ 跳转被系统挡住" textSize="15sp" textColor="#b3261e"/>
+                        <text text="小米「后台弹出界面」· 华为「关联启动」· OPPO「后台弹窗」"
+                              textSize="12sp" textColor="#8a8a8a"/>
+                    </vertical>
+                    <text text="去开启 ›" textSize="14sp" textColor="#1a73e8" padding="8 0 0 0"/>
+                </horizontal>
+                <horizontal id="行悬浮" h="auto" gravity="center_vertical" padding="0 10">
                     <vertical w="0" layout_weight="1">
                         <text text="悬浮窗" textSize="15sp" textColor="#1f1f1f"/>
                         <text text="可选 · 跑的时候看进度、随时暂停" textSize="12sp" textColor="#8a8a8a"/>
@@ -321,7 +539,7 @@ ui.layout(
                      通知有两层:系统权限(要不要给)+ App 自己的偏好(跑完发不发)。
                      后者是我们自己的事,该给开关。
                 */}
-                <horizontal id="行通知" h="64" gravity="center_vertical">
+                <horizontal id="行通知" h="auto" gravity="center_vertical" padding="0 10">
                     <vertical w="0" layout_weight="1">
                         <text text="跑完发通知" textSize="15sp" textColor="#1f1f1f"/>
                         <text id="通知说明" text="把结果发到通知栏" textSize="12sp" textColor="#8a8a8a"/>
@@ -342,7 +560,7 @@ ui.layout(
                 */}
                 <vertical id="行目标区" visibility="gone">
                     <text h="1" bg="#ececec"/>
-                    <horizontal id="行目标" h="64" gravity="center_vertical">
+                    <horizontal id="行目标" h="auto" gravity="center_vertical" padding="0 10">
                         <vertical w="0" layout_weight="1">
                             <text text="操作对象" textSize="15sp" textColor="#1f1f1f"/>
                             <text id="态目标说明" text="" textSize="12sp" textColor="#8a8a8a"/>
@@ -445,8 +663,15 @@ ui.layout(
                     <button id="装新包钮" text="下载并安装新版" textSize="16sp" h="52"
                             visibility="gone" margin="0 8 0 6" bg="#1e8e3e" textColor="#ffffff"/>
                     {/* 只有当系统里不止一个应用能处理 txvideo:// 时才出现 */}
-                    <text id="换腾讯" text="换一个腾讯视频 ›" textSize="14sp" textColor="#1a73e8"
-                          visibility="gone" margin="0 14 0 4" padding="0 6"/>
+                    {/* ⚠️ 只有加载器认这个开关的包才显示(见 有自动查开关 那个记号)。
+                        老包拉到新脚本也不会画出来 —— 画了就是个死开关 */}
+                    <horizontal id="行自动查" h="auto" gravity="center_vertical" padding="0 10" visibility="gone">
+                        <vertical layout_weight="1">
+                            <text text="自动查更新" textSize="15sp" textColor="#1f1f1f"/>
+                            <text id="自动查说明" text="" textSize="12sp" textColor="#8a8a8a"/>
+                        </vertical>
+                        <Switch id="自动查开关" checked="true"/>
+                    </horizontal>
                     <text id="查更新说明" text="" textSize="13sp" textColor="#8a8a8a" margin="0 4 0 0"/>
                 </vertical>
             </scroll>
@@ -463,11 +688,17 @@ ui.layout(
             <horizontal gravity="center_vertical" padding="14 12">
                 <text id="日志返回" text="‹ 返回" textSize="16sp" textColor="#1a73e8" w="0" layout_weight="1"/>
                 <text id="日志诊断" text="显示诊断" textSize="13sp" textColor="#8a8a8a" padding="8"/>
+                {/* ⚠️ 这颗键存在的理由就是「把日志送到维护者手里」,所以叫「发送」不叫「复制」——
+                    用户原先只会截图(长了截不全、搜不了),给了「复制」他也不知道该粘到哪去。
+                    点了会先说清楚要发什么,再拉出系统分享面板;详见下面 ui.日志发送 那段。 */}
+                <text id="日志发送" text="发送" textSize="13sp" textColor="#1a73e8" padding="8"/>
                 <text id="日志清空" text="清空" textSize="13sp" textColor="#b3261e" padding="8"/>
             </horizontal>
             <text h="1" bg="#ececec"/>
             <scroll id="日志滚动" h="*">
-                <text id="日志全文" text="" textSize="12sp" textColor="#444444" padding="14"/>
+                {/* ⚠️ 11sp 已经是下限,再小在**大字体用户**那儿也许还行,
+                       但默认字体的机器上就读不动了。这是日志页,不是装饰。 */}
+                <text id="日志全文" text="" textSize="11sp" textColor="#444444" padding="14"/>
             </scroll>
         </vertical>
     </vertical>
@@ -693,6 +924,13 @@ var 账号进度 = "", 账号名显示 = "";
 // ⚠️ 尺寸写成常量:布局、setSize、挪位置三处都要用同一组数,各写各的迟早对不上
 //    (悬浮窗的大小是创建那一刻按内容量的,setSize 比内容小就会裁掉一截)。
 var 条宽dp = 94, 条高dp = 198, 条缩dp = 6;
+/*
+ * 多目标时顶上多一层「本机/分身」。窗口高度是 setSize 写死的 ——
+ * ⚠️ 不加高的话那一层会被窗口边缘**直接切掉**,看不见还以为没生效。
+ *    一行 9sp(≈14dp,字体放大留余量给到 20)+ 分隔线 1 + margin 3+7 = 31。
+ */
+var 条多目标加高dp = 31;
+var 目标进度 = "";          // 「本机 1/2」这种;单目标时为空,那一层就不画
 
 function 挪控制条(高比例) {
     if (!控制条) return;
@@ -725,6 +963,17 @@ function 开控制条() {
                 */}
                 <vertical id="盒" bg="#f5202124" padding="9" gravity="center"
                           visibility="invisible">
+                    {/*
+                      最上面这一层:**在哪个操作对象上**(本机 / 分身 · 第几个)。
+                      ⚠️ 只有选了两个以上目标才显示 —— 单目标的人多出一行空信息只是干扰。
+                         藏用 gone(不占位),窗口高度也跟着少算一截,见 条高dp。
+                      ⚠️ 层级从上到下是「对象 → 号 → 角色」,由粗到细。少了最上面这层的话,
+                         本机和分身跑的是同一批角色、同一批账号名,屏幕上根本分不出
+                         现在在哪个实例里(用户提的)。
+                    */}
+                    <text id="标" text="" textColor="#ffd54f" textSize="9sp"
+                          w="76" h="auto" gravity="center" visibility="gone"/>
+                    <text id="标线" h="1" bg="#40ffffff" margin="0 3 0 7" visibility="gone"/>
                     {/* 上半:在第几个号、哪个号。下半:这个号做到第几个角色 */}
                     <text id="号" text="" textColor="#bdc1c6" textSize="9sp"
                           w="76" h="34" gravity="center"/>
@@ -763,7 +1012,8 @@ function 开控制条() {
                 var 密 = context.getResources().getDisplayMetrics().density;
                 // 内容 76 宽 + 左右各 9 padding = 94(用户觉得 104 稍宽)
                 // 高 34 + (1+3+7 分隔线) + 40 + 42 + 6 + 42 + 上下 20 = 195,给到 198 留余量
-                var 宽 = Math.round(条宽dp * 密), 高 = Math.round(条高dp * 密);
+                var 高dp = 条高dp + (目标进度 ? 条多目标加高dp : 0);
+                var 宽 = Math.round(条宽dp * 密), 高 = Math.round(高dp * 密);
                 控制条.setSize(宽, 高);
                 // 贴右边缘、竖向放在 45% 高度处。
                 // 表白按钮实测在 y≈328~370,这里从 y≈0.45*屏高 才开始,隔得很开。
@@ -785,6 +1035,9 @@ function 开控制条() {
                 装按钮(控制条.暂, 初.底, 初.字, 初.纹, 16);
                 条暂色 = 初.底;
                 装按钮(控制条.停, 中性深, "#ffffff", 白纹, 16);
+                var 要标 = 目标进度 ? android.view.View.VISIBLE : android.view.View.GONE;
+                控制条.标.setVisibility(要标);
+                控制条.标线.setVisibility(要标);
                 控制条.盒.setVisibility(android.view.View.VISIBLE);   // 摆好上妆完,现在才露脸
             } catch (e) { 诊("(悬浮条上妆失败:" + e + ")"); }
             try {
@@ -938,6 +1191,7 @@ function 刷新状态() {
             try {
                 控制条.字.setText(条文);
                 控制条.号.setText(号文);
+                if (目标进度) 控制条.标.setText(目标进度);
                 控制条.暂.setText(控制.暂停 ? "继续" : "暂停");
                 var 条配 = 暂停配色();
                 if (条配.底 !== 条暂色) {
@@ -962,27 +1216,45 @@ function 刷新状态() {
         ui.设置标题行.setVisibility(跑着 ? 隐 : 显);
         ui.设置箭头.setVisibility(可收 ? 显 : 隐);
         ui.设置箭头.setText(实际张开 ? "⌄" : "›");
-        ui.设置摘要.setVisibility(实际张开 ? 隐 : 显);
-        if (!实际张开) {
-            ui.设置摘要.setText("无障碍 " + (开了 ? "已开" : "未开")
-                + " · 悬浮窗 " + (悬浮 ? "已开" : "未开")
-                + " · 通知 " + (通知 ? (想要通知() ? "开" : "关") : "未开"));
-        }
-        ui.权限区.setVisibility((跑着 || !实际张开) ? 隐 : 显);
-        ui.状态.setVisibility(跑着 ? 显 : 隐);
-        写状态(ui.态无障碍, 开了);
-        // 操作对象那一行:候选不足两个就整行藏起来
+        /*
+         * 操作对象那一行:候选不足两个就整行藏起来。
+         * ⚠️ 这一段要**排在摘要前面**算 —— 收起来的时候摘要也得报它。
+         *    用户反馈「操作对象藏在设置里容易被忽略」,而设置一收起,
+         *    连个影子都没有就更看不见了。
+         */
+        var 目标几个 = 0;
         try {
             var 候 = 腾讯候选();
             ui.行目标区.setVisibility(候.length >= 2 ? 显 : 隐);
             if (候.length >= 2) {
                 var 名 = [];
                 for (var mi = 0; mi < 候.length; mi++)
-                    if (目标包们.indexOf(候[mi].包名) >= 0) 名.push(候[mi].名字);
-                ui.态目标.setText((名.length || 1) + " 个  ›");
-                ui.态目标说明.setText(名.length ? 名.join("、") : "还没选");
+                    if (目标包们.indexOf(候[mi].键) >= 0)
+                        // ⚠️ 三星上分身的名字跟本尊一模一样,不标一下根本分不出来
+                        名.push(候[mi].名字 + (候[mi].是本机 ? "" : "(分身)"));
+                目标几个 = 名.length;
+                ui.态目标.setText((目标几个 || 1) + " 个  ›");
+                ui.态目标说明.setText(目标几个 ? 名.join("、") : "还没选");
             }
         } catch (e) {}
+
+        ui.设置摘要.setVisibility(实际张开 ? 隐 : 显);
+        if (!实际张开) {
+            /*
+             * ⚠️ 操作对象**排在最前面**。用户反馈它「藏在设置里容易被忽略」,
+             *    而这行在字体放大的机器上会折成两行 —— 排最后的话它正好掉到第二行,
+             *    等于又藏了一次。前三项是权限状态,开好之后基本不用再看。
+             */
+            ui.设置摘要.setText((目标几个 ? "操作对象 " + 目标几个 + " 个 · " : "")
+                + "无障碍 " + (开了 ? "已开" : "未开")
+                + " · 悬浮窗 " + (悬浮 ? "已开" : "未开")
+                + " · 通知 " + (通知 ? (想要通知() ? "开" : "关") : "未开"));
+        }
+        // 只有真撞上过才显示,而且跑动时不显示(跑动时整块设置都收起来)
+        ui.行后台弹出.setVisibility((疑似被挡 && !跑着) ? 显 : 隐);
+        ui.权限区.setVisibility((跑着 || !实际张开) ? 隐 : 显);
+        ui.状态.setVisibility(跑着 ? 显 : 隐);
+        写状态(ui.态无障碍, 开了);
         写状态(ui.态悬浮, 悬浮);
         /*
          * 通知行按阶段换外观:没拿到系统权限时它是一道门(跟上面两行一样),
@@ -1074,9 +1346,52 @@ ui.通知开关.on("check", function (勾上) {
  * 加载器把检查结果写在 SharedPreferences 里,这里直接读 ——
  * 不依赖加载器的全局对象,因为脚本也可能被 AutoJs6 直接跑,那时根本没有加载器。
  */
+/*
+ * 自动查更新开不开。
+ * ⚠️ 存在**通道自己**那份偏好里(loader-<通道>),跟 loader 读的是同一个键 ——
+ *    在测试包里关掉,不该影响正式包。
+ */
+function 读自动查() {
+    // 用户明确选过就听他的;没选过要看**加载器这次实际用的值**(默认值烤在 loader 里,
+    // 界面猜不到 —— 猜的话就会出现「日志说已关、界面显示开着」)
+    var 选过 = 读加载器偏好("自动查", "");
+    if (选过 === "1" || 选过 === "0") return 选过 === "1";
+    return 读加载器偏好("实际自动查", "1") !== "0";
+}
+function 写自动查(开) {
+    try {
+        var 基 = context.getSharedPreferences("loader", 0);
+        var 通 = String(基.getString("当前通道", "") || "");
+        var 盘 = 通 ? context.getSharedPreferences("loader-" + 通, 0) : 基;
+        盘.edit().putString("自动查", 开 ? "1" : "0").apply();
+    } catch (e) { 诊("写自动查出错:" + e); }
+}
+/** 这个包的加载器认不认这个开关。不认就别画 —— 画了也是死的 */
+function 有自动查开关() {
+    try {
+        return String(context.getSharedPreferences("loader", 0)
+                      .getString("有自动查开关", "")) === "1";
+    } catch (e) { return false; }
+}
+
+/** 现在跑在哪条通道上。空 = 稳定。由 loader.js 启动时写进基础偏好 */
+function 当前通道() {
+    try {
+        return String(context.getSharedPreferences("loader", 0).getString("当前通道", "") || "");
+    } catch (e) { return ""; }
+}
+
 function 读加载器偏好(键, 默认值) {
     try {
-        return String(context.getSharedPreferences("loader", 0).getString(键, 默认值));
+        /*
+         * ⚠️ 非稳定通道的加载器偏好存在 **loader-<通道>** 里(见 loader.js 的「通道」那段),
+         *    读错文件的话 beta 包的「上次检查/结果/新包提示」全是空的,看着像更新链路坏了。
+         *    通道名本身永远在基础那份里。
+         */
+        var 基 = context.getSharedPreferences("loader", 0);
+        var 通 = String(基.getString("当前通道", "") || "");
+        var 盘 = 通 ? context.getSharedPreferences("loader-" + 通, 0) : 基;
+        return String(盘.getString(键, 默认值));
     } catch (e) { return 默认值; }
 }
 
@@ -1089,6 +1404,54 @@ function 多久之前(毫秒) {
     return Math.floor(时 / 24) + " 天前";
 }
 
+/*
+ * ── 版本信息页 ──
+ *
+ * 【要回答的第一个问题:为什么有两个版本号】
+ *   用户反馈看不懂。原先「安装包 0.1.7」和「脚本 2026.09.19.3」只是并排两行,
+ *   长得一模一样,凭什么看出它们是两回事、又各自怎么更新?
+ *   所以改成两块,**把区别写进小标题**:
+ *     主程序  · 换版本要重新装一次
+ *     表白脚本 · 会自己联网更新,不用重装
+ *   —— 不用读正文就知道差在哪。
+ *
+ * 【拿掉了「操作对象」】
+ *   那是**设置**,主界面「设置 → 操作对象」那一行才是它的家,这里只会让人以为
+ *   在这儿也能改(实际不能)。一个功能一个入口。
+ *
+ * 【报障那一行留着】
+ *   三个包(正式 /(测)/(beta))长得一模一样,一张截图发过来得先能分出是哪个。
+ *   所以包名/通道/来源压成一行小灰字,并且**明说**「报障时连这行一起截」。
+ */
+/*
+ * 构建标记有两种形状,给用户看之前要**翻成人话**:
+ *
+ *   远程 2026.09.19.3      →  「2026.09.19.3」
+ *                             联网更新下来的,后面那串就是脚本版本号。
+ *   内置 20260919-180100   →  「安装包自带(26/09/19 18:01 打包)」
+ *
+ * ⚠️ 「内置」那一种**根本没有版本号可给**:版本号是发布时(release.py)才分配的,
+ *    而包里那份是打包时直接塞进去的、还没发布过,所以只能报打包时间。
+ *    原样写成「内置 20260919-180100」的话,用户会把它当成版本号(实测被问了)——
+ *    而**刚装好的人第一次打开看到的就是这一行**,它必须自己讲得清楚。
+ *
+ * ⚠️ 别动 构建标记 本身,只动显示。deploy.sh 靠日志里的 "构建 <来源> <标记>" 这三段
+ *    核对手机上跑的是不是这次刚打的包,改了那条对不上,开发期每次都要靠猜。
+ * ⚠️ 版本号(2026.09.19.3)**故意**保持点分隔 —— 它是版本号不是时间,
+ *    跟时间戳长得不一样是对的,不该一起统一掉。
+ */
+function 脚本来历() {
+    var 原 = String(构建标记 || "");
+    var m = /^内置 (20[0-9]{6})-([0-9]{6})$/.exec(原);
+    if (m) {
+        var 日 = m[1], 分 = m[2];
+        return { 自带: true, 文: 日.substring(2, 4) + "/" + 日.substring(4, 6) + "/"
+                 + 日.substring(6, 8) + " " + 分.substring(0, 2) + ":" + 分.substring(2, 4) };
+    }
+    if (原.indexOf("远程 ") === 0) return { 自带: false, 文: 原.substring(3) };  // 「远程」+ 空格
+    return { 自带: false, 文: 原 };
+}
+
 function 画版本页() {
     var 行分 = String.fromCharCode(10);
     var 包版本 = "?", 包版本号 = "?";
@@ -1097,56 +1460,168 @@ function 画版本页() {
         包版本 = String(包.versionName); 包版本号 = String(包.versionCode);
     } catch (e) {}
     var 来源 = 读加载器偏好("本次来源", "") || "(没有加载器,可能是直接跑的脚本)";
-    var 何时 = "(还没查过)";
+    // 拆两段:时间要染成「时间色」,「多久之前」是附注,走小灰字
+    var 何时点 = "", 何时附 = "还没查过";
     try {
         var t = parseInt(读加载器偏好("上次查时间", "0"), 10);
-        if (t) 何时 = 时间戳(new Date(t)) + "  ·  " + 多久之前(t);
+        if (t) { 何时点 = 时间戳(new Date(t)); 何时附 = "(" + 多久之前(t) + ")"; }
     } catch (e) {}
+
     /*
-     * 有没有新的安装包。加载器查更新时把清单里的 APK 信息记进了偏好。
+     * 有没有新的安装包。
      * ⚠️ 比的是 versionCode 不是版本名 —— 版本名是给人看的字符串,"0.1.10" < "0.1.9"
      *    这种比较会错;versionCode 是整数,Android 自己也是按它判断能不能升级。
      */
-    var 新包提示 = "";
+    var 有新包 = false, 新包名 = "";
     try {
         var 远号 = parseInt(读加载器偏好("远程APK版本号", "0"), 10) || 0;
         var 本号 = parseInt(包版本号, 10) || 0;
-        if (远号 > 本号) {
-            新包提示 = 行分 + "          ⚠️ 有新版安装包 "
-                     + 读加载器偏好("远程APK版本名", "?")
-                     + "(versionCode " + 远号 + ")";
-        }
+        if (远号 > 本号) { 有新包 = true; 新包名 = 读加载器偏好("远程APK版本名", "?"); }
     } catch (e) {}
 
     /*
-     * 操作的是哪个腾讯视频。出问题时这是最有用的一行 ——
-     * 脚本认的是那个 App 的页面名和界面文字,版本一变就可能不灵。
+     * ⚠️ **版本号和时间要分得开**,这一页上两种东西挨着放
+     *    (0.1.7 / 2026.09.19.3 / 26/09/19 19:03),光看数字分不清谁是谁。
+     *    给两道保险:
+     *      版本 → 蓝色 + 后面跟一个「版」字     0.1.7 版
+     *      时间 → 紫色 + 前面带一个「于」字     打包于 26/09/19 18:06
      */
-    var 候选 = 定腾讯包();
-    var 腾讯行 = "(没找到能处理 txvideo:// 的应用)";
-    if (候选.length) {
-        for (var qi = 0; qi < 候选.length; qi++) {
-            if (候选[qi].包名 === 腾讯包) {
-                腾讯行 = 候选[qi].名字 + " " + 候选[qi].版本 + 行分
-                       + "          " + 候选[qi].包名;
-            }
-        }
-        if (候选.length > 1) 腾讯行 += 行分 + "          (系统里有 " + 候选.length + " 个候选)";
+    var 灰 = "#8a8a8a", 深 = "#1f1f1f", 蓝 = "#1a73e8", 紫 = "#7b1fa2", 红 = "#b3261e";
+    function 小(t) { return "<font color='" + 灰 + "'>" + 转义(t) + "</font>"; }
+    function 号(t) { return "<b><font color='" + 蓝 + "'>" + 转义(t) + "</font></b>" + 小(" 版"); }
+    function 时(t) { return "<font color='" + 紫 + "'>" + 转义(t) + "</font>"; }
+    function 警(t) { return "<font color='" + 红 + "'>" + 转义(t) + "</font>"; }
+    function 好(t) { return "<font color='#0b8043'>" + 转义(t) + "</font>"; }
+    /*
+     * 结果串是**加载器写的**(「已是最新(2026.09.16.1 版)」之类),里头夹着版本号。
+     * 整行染成灰的话,那个版本号就跟别处的版本号不是一个颜色了 —— 页面上
+     * 「蓝色=版本」这条约定一破,读者又得重新判断每个数字是什么。
+     * 所以把串里长得像版本号的那一段挑出来,单独上蓝色。
+     * ⚠️ 正则里不写反斜杠(见铁律 3),用 [.] 代替 \. 。
+     */
+    function 染结果(t) {
+        return 转义(String(t || "")).replace(/(20[0-9]{2}(?:[.][0-9]+)+)/g,
+            "</font><b><font color='" + 蓝 + "'>$1</font></b><font color='" + 灰 + "'>");
+    }
+    function 题(t, 副) {
+        return "<b><font color='" + 深 + "'>" + 转义(t) + "</font></b>"
+             + (副 ? " " + 小("· " + 副) : "");
     }
 
-    var 文 = "应用      小菇爱表白" + 行分
-           + "包名      " + context.getPackageName() + 行分
-           + "安装包    " + 包版本 + "(versionCode " + 包版本号 + ")" + 新包提示 + 行分 + 行分
-           + "脚本      " + 构建标记 + 行分
-           + "来源      " + 来源 + 行分 + 行分
-           + "上次检查  " + 何时 + 行分
-           + "结果      " + 读加载器偏好("上次查结果", "(还没查过)") + 行分 + 行分
-           + "操作对象  " + 腾讯行;
+    var 段 = [];
+    段.push(题("主程序", "换版本要重新装一次"));
+    段.push(号(包版本) + " " + 小("versionCode " + 包版本号));
+    if (有新包) 段.push(警("⚠️ 有新版 " + 新包名 + " 版,点下面的按钮装"));
+    段.push("");
+    /*
+     * ⚠️ 这里**不要**副标题。写过两版都不行:
+     *    「会自己联网更新,不用重装」—— 误导(下安装包那一刻脚本可能已经翻过好几版);
+     *    「表白的流程写在这里」—— 废话,用户不需要知道这个。
+     *    下面那几行本来就在如实报状态,小标题再补一句只会占地方。
+     */
+    段.push(题("表白脚本"));
+    var 脚 = 脚本来历();
+    var 缓存版 = 读加载器偏好("缓存版本", "");
+    var 结果串 = 读加载器偏好("上次查结果", "");
+    /*
+     * ⚠️ 测试包(只用内置)**永远不会去吃缓存**,对它说「重开 App 就换上」是假话,
+     *    而且这句会**一直挂在那儿**:重开多少次都还是跑内置,看起来就像「重开了也没换」。
+     *    加载器把这件事写在 本次来源 里(「内置(测试版)」),照着判就行。
+     * ⚠️ 声明放在这儿、不要放进下面的 if 里 —— 块外也要用它(见 报结果)。
+     *    var 会提升,写在块里照样能跑,但那正是这个项目栽过的那类坑(内置自动查)。
+     */
+    var 只跑自带 = String(来源).indexOf("测试版") >= 0;
+    /*
+     * ⚠️ **「收下新版 X 版,重开 App 生效」是上一次检查时写下的。**
+     *    用户真的重开之后,跑的已经是 X 了,这句话就过期了 ——
+     *    可它要等到下一次检查(最多 6 小时后)才会被覆盖,于是
+     *    「我明明重开了,怎么还在喊重开?」(用户实测撞上)。
+     *    判据用结构化的事实,不解析文案:现在跑的就是缓存里那一份 → 那条消息已经兑现。
+     * ⚠️ 修在 checkin.js 而不是 loader.js —— loader 在 APK 里,**远程更新改不掉**,
+     *    改那边等于只有换了新安装包的人才修得好。
+     */
+    if (!脚.自带 && 缓存版 && 脚.文 === 缓存版 && 结果串.indexOf("重开") >= 0)
+        结果串 = "已经换上 " + 缓存版 + " 版";
+    if (脚.自带) {
+        /*
+         * ⚠️ 这一支是**新装的人第一次打开会看到的**,必须把话说完:
+         *    ① 现在跑的是装包时带的那份,多半已经旧了(诚实)
+         *    ② 不用他做任何事 —— 加载器在 APK versionCode 变化时会**强制查一次**、
+         *       不受 6 小时节流,拉下来的那份下次冷启动生效(见 loader.js 尾部)。
+         *    不写②的话,用户会以为要自己去点「检查更新」。
+         *
+         * ⚠️ 新版**已经下好**时要把版本号顶到这儿来,别让用户到最底下的「结果」里去找。
+         *    判据直接读 缓存版本,不去解析结果串 —— 那串是给人看的文案,随时会改。
+         *    (真机上「跑着内置 + 缓存里有一份」只会发生在刚下好还没重开那一小段,
+         *     因为 选脚本() 只要缓存可用就优先用缓存。测试包例外:它从不吃缓存。)
+         */
+        段.push("<b><font color='" + 深 + "'>安装包自带</font></b>"
+                + 小("(打包于 ") + 时(脚.文) + 小(")"));
+        if (缓存版 && !只跑自带) {
+            /*
+             * ⚠️ 这一行说完了,下面的「结果:收下新版 …」就是**同一件事说两遍** ——
+             *    见下面 报结果 那个开关。留上面这行(位置靠前、版本号看得见),
+             *    砍掉下面那行。
+             */
+            段.push(好("✓ 已下好 ") + 号(缓存版) + 好(",重开 App 就换上"));
+        } else if (只跑自带) {
+            段.push(小("这个包只跑安装包自带的脚本,不吃下载的那份"));
+        } else {
+            /*
+             * ⚠️ 这里**不要**摆一条红色警告(「网上多半已经有更新的了」之类)。
+             *    装好之后加载器已经自己拉过一次了,拿警告去提醒用户担心一件
+             *    已经处理掉的事,只会让他去找那颗「检查更新」—— 而且跟下一句
+             *    「不用你做什么」自相矛盾。
+             * ⚠️ 措辞要在「拉成功」和「拉失败」两种情况下都成立,所以只讲**机制**
+             *    (会自己拉、拉到就换),**这一次到底拉成没有**由紧接着的
+             *    「上次检查于 …／结果:…」两行如实报。
+             */
+            段.push(小("新版会自己拉,不用你点什么;拉到之后重开 App 就换上"));
+        }
+    } else {
+        段.push(号(脚.文) + " " + 小("· 联网更新下来的,换版本不用重装安装包"));
+    }
+    /*
+     * ⚠️ 还没查过的时候不要硬套「上次检查于 …」这个句式 ——
+     *    「于」后面没东西,变成「上次检查于 还没查过」,而且跟下一行「结果:还没查过」
+     *    说的是同一件事。没查过就一行带过。
+     */
+    if (何时点) {
+        段.push(小("上次检查于 ") + 时(何时点) + 小(" " + 何时附));
+        // 上面那行「✓ 已下好 …」已经把「收下新版」讲完了,这里不再说第二遍
+        var 报结果 = !(脚.自带 && 缓存版 && !只跑自带 && 结果串.indexOf("收下新版") >= 0);
+        if (报结果 && 结果串)
+            段.push("<font color='" + 灰 + "'>结果:" + 染结果(结果串) + "</font>");
+    } else {
+        段.push(小("还没查过更新"));
+    }
+    段.push("");
+    段.push(小("报障时连这行一起截 ——"));
+    段.push(小(context.getPackageName()
+               + (当前通道() ? " · " + 当前通道() + " 通道" : "")
+               + " · " + 来源));
+    var 文 = 段.join("<br>");
+
+    var 有开关 = 有自动查开关(), 自动 = 读自动查();
     ui.run(function () {
-        ui.装新包钮.setVisibility(新包提示 ? android.view.View.VISIBLE : android.view.View.GONE);
-        ui.换腾讯.setVisibility(候选.length > 1 ? android.view.View.VISIBLE : android.view.View.GONE);
-        ui.版本正文.setText(文);
-        ui.查更新说明.setText("每 6 小时自动查一次;点上面的按钮可以立刻查,不受这个限制。"
+        ui.行自动查.setVisibility(有开关 ? android.view.View.VISIBLE : android.view.View.GONE);
+        if (有开关) {
+            ui.自动查开关.setChecked(自动);
+            ui.自动查说明.setText(自动 ? "每 6 小时自己查一次"
+                                     : "只有点上面那颗按钮才查(装了新安装包时仍会查一次)");
+        }
+        ui.装新包钮.setVisibility(有新包 ? android.view.View.VISIBLE : android.view.View.GONE);
+        // 同 画日志页:两参数版本,抛了就退回纯文本
+        try {
+            var H = android.text.Html;
+            ui.版本正文.setText(H.fromHtml(文, H.FROM_HTML_MODE_LEGACY));
+        } catch (e) {
+            ui.版本正文.setText("主程序 " + 包版本 + 行分 + "表白脚本 " + 构建标记);
+        }
+        // ⚠️ 这句得跟着开关走。写死「每 6 小时自动查一次」的话,关了开关的人看到的是假话
+        ui.查更新说明.setText((有开关 && !自动
+                              ? "自动查已关;点上面的按钮可以随时查。"
+                              : "每 6 小时自动查一次;点上面的按钮可以立刻查,不受这个限制。")
                            + 行分 + "查到新版要重开 App(从最近任务划掉再打开)才生效。");
     });
 }
@@ -1266,13 +1741,27 @@ ui.装新包钮.on("click", function () {
     }, 500);
 });
 
-ui.行目标.on("click", function () {
+/*
+ * 选操作对象。**主界面那一行和版本信息页那个入口共用这一个** ——
+ * ⚠️ 别再写第二个选择框。版本页原先自己有一个「换一个腾讯视频」,是多目标之前的遗物:
+ *    它只改 腾讯包、不认 user、也不写 目标包们,于是
+ *      · 分身机型上列出来是两条**一模一样**的条目,根本没法选
+ *      · 选完通常也不生效 —— 开跑时 定目标们() 会按记住的 目标包们 把 腾讯包 覆盖掉
+ *    两个入口两套真相,这种东西迟早出事。
+ */
+function 选操作对象() {
     var 候选 = 腾讯候选();
     if (候选.length < 2) { toast("系统里只有一个,没得选"); return; }
     var 项 = [], 已选 = [];
     for (var i = 0; i < 候选.length; i++) {
-        项.push(候选[i].名字 + "  " + 候选[i].版本 + String.fromCharCode(10) + 候选[i].包名);
-        if (目标包们.indexOf(候选[i].包名) >= 0) 已选.push(i);
+        /*
+         * ⚠️ 第二行必须带 user 标注。分身跟本尊同包名同显示名(三星上一字不差),
+         *    只列名字+包名的话用户看到的是两个完全相同的条目,没法选。
+         */
+        var 归属 = 候选[i].是本机 ? "本机" : ("分身(user " + 候选[i].user + ")");
+        项.push(候选[i].名字 + "  " + 候选[i].版本 + String.fromCharCode(10)
+                + 候选[i].包名 + " · " + 归属);
+        if (目标包们.indexOf(候选[i].键) >= 0) 已选.push(i);
     }
     /*
      * ⚠️ 用**回调**形式,不要用 `.then()`。这个版本的 dialogs.multiChoice 传了回调就返回 null,
@@ -1283,11 +1772,12 @@ ui.行目标.on("click", function () {
         try {
             if (!选中 || !选中.length) { toast("至少要选一个"); return; }
             目标包们 = [];
-            for (var j = 0; j < 选中.length; j++) 目标包们.push(候选[选中[j]].包名);
-            腾讯包 = 目标包们[0];
+            for (var j = 0; j < 选中.length; j++) 目标包们.push(候选[选中[j]].键);
+            用目标(目标包们[0]);
             记住目标们();
             诊("操作对象改成:" + 目标包们.join("、"));
             刷新状态();
+            if (当前页 === "版本") 画版本页();   // 从版本信息页进来的,那一页也要跟着变
             toast(目标包们.length > 1 ? "会依次跑这 " + 目标包们.length + " 个" : "只跑一个");
         } catch (e) { 诊("选操作对象出错:" + e); toast("没选成:" + e); }
     };
@@ -1295,34 +1785,205 @@ ui.行目标.on("click", function () {
         var 回 = dialogs.multiChoice("要操作哪几个?(会按顺序一个一个跑完)", 项, 已选, 收下);
         if (回 && typeof 回.then === "function") 回.then(收下);   // 万一这个版本反过来
     } catch (e) { 诊("打开操作对象选择框出错:" + e); toast("打不开选择框:" + e); }
-});
+}
 
-ui.换腾讯.on("click", function () {
-    var 候选 = 腾讯候选();
-    if (候选.length < 2) { toast("系统里只有一个,没得选"); return; }
-    var 项 = 候选.map(function (c) {
-        return c.名字 + "  " + c.版本 + String.fromCharCode(10) + c.包名
-             + (c.包名 === 腾讯包 ? "  ← 正在用" : "");
-    });
-    dialogs.select("用哪个腾讯视频?", 项).then(function (i) {
-        if (i < 0) return;
-        腾讯包 = 候选[i].包名;
-        try { if (偏好) 偏好.put("腾讯包", 腾讯包); } catch (e) {}
-        诊("用户手动选了 " + 腾讯包);
-        画版本页();
-        toast("已改用 " + 候选[i].名字);
-    });
+ui.行目标.on("click", 选操作对象);
+
+ui.自动查开关.on("check", function (view, 勾上) {
+    if (勾上 === 读自动查()) return;            // 是我们自己 setChecked 触发的,别当成用户操作
+    写自动查(勾上);
+    诊("自动查更新改成:" + (勾上 ? "开" : "关"));
+    画版本页();
+    // ⚠️ loader 是在**启动时**读这个值的,所以这次运行内不会变;说清楚免得用户以为没生效
+    toast(勾上 ? "下次启动开始自动查" : "已关,想更新就点「检查更新」");
 });
 
 ui.看日志.on("click", function () { 去看日志(); });
 
 ui.日志返回.on("click", function () { 当前页 = ""; 刷新状态(); });
 ui.日志诊断.on("click", function () { 看诊断 = !看诊断; 画日志页(); });
+/*
+ * ── 报障:把日志送到维护者手里 ──
+ *
+ * 【要解决的是什么】
+ *   日志是给维护者排障用的,可它一直停在用户手机上:用户只会截图(长了截不全、
+ *   搜不了、诊断行默认还藏着),就算给了「复制」,他也不知道该粘到哪去。
+ *   所以这颗键点下去会**先说清楚要发什么**,再把系统分享面板拉出来 ——
+ *   他从里面挑 QQ / 微信 / 邮件就行,那正是他平时找维护者的地方。
+ *
+ * 【为什么不自己往服务器传】
+ *   ⚠️ 脚本是从**公开的 raw 链接**下发的,APK 也是公开下载的 —— 里面**放不住任何密钥**。
+ *      真要做「后台自动上报」,只能对着一个允许匿名写入的地址发,那得另外有个地方。
+ *      在那之前,一键分享是零基建、而且**用户自己按下发送**(他知道自己发了什么)的做法。
+ *
+ * 【为什么发文件不发文字】
+ *   ⚠️ **纯文字发不出去。** 用户实测:把日志粘进微信,被挡下来说太长 ——
+ *      聊天工具对单条文字有几千字的上限,而一轮日志轻松上万字。
+ *      发**文件**就没这个限制,维护者收到的也是能搜、能滚的 .txt,不是一堵墙。
+ *   ⚠️ 文件要经 FileProvider 才能递给别的 App(Android 7 起禁止直接传 file:// URI)。
+ *      authority 是「<包名>.fileprovider」—— build.py 改包名时会把 manifest 字串池里的
+ *      authority 一起改掉,所以这里**必须**用 getPackageName() 拼,不能写死。
+ *      它的 paths 资源(模板里的 res/zz.xml)带 root-path 和 external-path,盖得住日志目录。
+ *   ⚠️ 万一 FileProvider 抛了(模板哪天换了),退回发文字并削短 —— 有总比没有强。
+ */
+
+/** 太长就只留最后一段,开头说明截掉了多少。 */
+function 截尾(文, 上限) {
+    文 = String(文 || "");
+    if (文.length <= 上限) return 文;
+    var 省 = 文.length - 上限;
+    文 = 文.substring(省);
+    var 断 = 文.indexOf(换行符);              // 从第一个换行切齐,别让开头是半行
+    if (断 > 0) 文 = 文.substring(断 + 1);
+    return "(太长,前面 " + 省 + " 个字省略了)" + 换行符 + 文;
+}
+
+function 读整档(档) {
+    try { return files.exists(档) ? String(files.read(档)) : ""; } catch (e) { return ""; }
+}
+
+/*
+ * 抬头。⚠️ 这几行比正文还重要:
+ *    三个包(正式 / beta / 测)长得一模一样,光看日志内容分不出是哪个;
+ *    而拦路框、后台启动管控、分身实现方式**全是按牌子分的** —— 没有机型等于白给。
+ */
+function 日志抬头() {
+    var 出 = ["小菇爱表白 运行日志"];
+    try {
+        出.push("包名 " + context.getPackageName() + " · 构建 " + 构建标记
+                + (当前通道() ? " · 通道 " + 当前通道() : ""));
+    } catch (e) {}
+    try {
+        出.push("机型 " + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL
+                + " · Android " + android.os.Build.VERSION.RELEASE
+                + " (SDK " + android.os.Build.VERSION.SDK_INT + ")");
+    } catch (e) {}
+    try { 出.push("无障碍 " + (无障碍开着() ? "开" : "关") + " · 导出 " + 时间戳()); } catch (e) {}
+    if (上次结果) 出.push("上次结果 " + 上次结果);
+    return 出.join(换行符);
+}
+
+/*
+ * 拼一份能直接发出去的日志。三段缺一不可:
+ *   ① 本次运行   —— **含诊断行**(候选清单、启动法、任务号、拦路框结构),
+ *                   那批恰恰是排障时最值钱的,而屏幕上默认是藏着的
+ *   ② 上一次运行 —— 见 日志档上一次:出事的那份往往正是这一份
+ *   ③ 更新加载器 —— 见 加载日志档:界面上根本看不到的那条链路
+ */
+function 组日志文本(本次上限, 上次上限, 加载上限) {
+    var 本次 = 行.length ? 行.join(换行符) : 读整档(日志档);
+    var 块 = [日志抬头(), "", "──── 本次运行 ────", 截尾(本次, 本次上限) || "(空)"];
+    var 上次 = 读整档(日志档上一次);
+    if (上次) { 块.push(""); 块.push("──── 上一次运行 ────"); 块.push(截尾(上次, 上次上限)); }
+    var 加载 = 读整档(加载日志档);
+    if (加载) { 块.push(""); 块.push("──── 更新加载器 ────"); 块.push(截尾(加载, 加载上限)); }
+    return 块.join(换行符);
+}
+
+function 复制日志() {
+    var 文 = 组日志文本(90000, 30000, 12000);   // 剪贴板放得下比较多(各家不一样,通常几百 KB)
+    try { setClip(文); toast("已复制,粘贴给维护者就行"); }
+    catch (e) { 诊("复制日志出错:" + e); toast("复制不了:" + e); }
+}
+
+/*
+ * 把日志写成一个 .txt,返回路径。
+ * ⚠️ 文件名带日期时间:几个用户同时发过来,文件名一样的话根本分不清谁是谁。
+ * ⚠️ 写在 getExternalFilesDir 里(不是用户的下载目录):不要权限、卸载自动清、
+ *    也不会往人家相册/文件管理器里丢垃圾。
+ */
+function 导出日志档() {
+    var t = new Date();
+    var 名 = "小菇日志-" + 两位(t.getMonth() + 1) + 两位(t.getDate())
+           + "-" + 两位(t.getHours()) + 两位(t.getMinutes()) + ".txt";
+    try {                                   // 上次导出的留着没用,清掉免得越堆越多
+        var 们 = new java.io.File(日志目录).listFiles();
+        for (var i = 0; 们 && i < 们.length; i++) {
+            var n = String(们[i].getName());
+            if (n.indexOf("小菇日志-") === 0 && n !== 名) 们[i]["delete"]();
+        }
+    } catch (e) {}
+    var 路 = files.join(日志目录, 名);
+    files.write(路, 组日志文本(2000000, 500000, 200000));   // 发文件就不用再削了
+    return 路;
+}
+
+function 分享日志() {
+    var uri = null;
+    try {
+        var 路 = 导出日志档();
+        /*
+         * ⚠️ 必须把 App 自己的 classloader 传进去。
+         *    单参数的 Class.forName(名) 用的是**调用方**的 classloader —— 在这里调用方是
+         *    Rhino 引擎自己的类,它看不见 APK 里的 androidx,结果是
+         *    ClassNotFoundException: androidx.core.content.FileProvider(实测,2026-09-19)。
+         *    症状很有迷惑性:类明明在包里(manifest 就是按这个名字声明 provider 的)。
+         */
+        var FP = java.lang.Class.forName("androidx.core.content.FileProvider",
+                                         true, context.getClassLoader());
+        var m = FP.getMethod("getUriForFile", android.content.Context.class,
+                             java.lang.String.class, java.io.File.class);
+        uri = m.invoke(null, context, context.getPackageName() + ".fileprovider",
+                       new java.io.File(路));
+    } catch (e) {
+        诊("导出日志档失败,退回发文字:" + e);
+    }
+    try {
+        var it = new android.content.Intent(android.content.Intent.ACTION_SEND);
+        // ⚠️ 发文件要用通配 MIME,不要用 text/plain。
+        //    微信/QQ 那种「接收文件」的入口注册的是通配类型;声明成 text/plain
+        //    只会命中它们**接收文字**的那个入口 —— 那个入口读的是 EXTRA_TEXT,
+        //    我们没给,结果就是发出去一条空消息。文件类型靠 .txt 后缀表达就够了。
+        // ⚠️ 这几行只能用行注释:通配 MIME 那个写法里含着块注释的结束符,
+        //    写进 /* */ 里会把注释提前闭合,整个文件语法就崩了(踩过)。
+        it.setType(uri ? "*/*" : "text/plain");
+        it.putExtra(android.content.Intent.EXTRA_SUBJECT, "小菇爱表白 运行日志");
+        if (uri) {
+            /*
+             * ⚠️ 只放 EXTRA_STREAM,**别同时放 EXTRA_TEXT** ——
+             *    两个都给的话,不少 App 会挑文字那一份发,文件就被无视了,
+             *    那就白改了。
+             */
+            it.putExtra(android.content.Intent.EXTRA_STREAM, uri);
+            it.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        } else {
+            it.putExtra(android.content.Intent.EXTRA_TEXT, 组日志文本(26000, 8000, 5000));
+        }
+        var 选 = android.content.Intent.createChooser(it, "把日志发给维护者");
+        // ⚠️ 授权要在 chooser 上再加一次:用户点中之前系统并不知道要授给谁
+        选.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        选.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+        context.startActivity(选);
+    } catch (e) {
+        诊("分享日志出错:" + e);
+        toast("分享不了,改用「复制」:" + e);
+    }
+}
+
+ui.日志发送.on("click", function () {
+    dialogs.build({
+        title: "把日志发给维护者",
+        /*
+         * ⚠️ 要把「发的是什么」摊开说。这份东西里有机型、系统版本,还有从页面上读到的
+         *    账号昵称 —— 用户有权在按下去之前就知道。顺带讲明白我们不会自己偷偷传。
+         */
+        content: "会存成一个 .txt 文件再发,不会因为太长被聊天软件挡下来。"
+               + "内容:机型、系统和 App 版本、这次和上一次的运行明细(含诊断)、更新记录。"
+               + "里面会出现你的账号昵称,不含密码。"
+               + "本应用不会自己上传,发给谁由你决定。",
+        positive: "发文件…", neutral: "复制", negative: "算了"
+    })
+    .on("positive", function () { 分享日志(); })
+    .on("neutral", function () { 复制日志(); })
+    .show();
+});
+
 ui.日志清空.on("click", function () {
     dialogs.build({ title: "清空日志?", content: "只清记录,不影响已经表白的结果。",
                     positive: "清空", negative: "算了" })
         .on("positive", function () {
             try { files.write(日志档, ""); } catch (e) {}
+            try { if (files.exists(日志档上一次)) files.remove(日志档上一次); } catch (e) {}
             行.length = 0; 画日志页(); toast("日志已清空");
         }).show();
 });
@@ -1341,6 +2002,23 @@ ui.设置标题行.on("click", function () {
     try { if (偏好) 偏好.put("设置展开", 展开设置); } catch (e) {}
     刷新状态();
 });
+/*
+ * 「跳转可能被系统挡住」那一行。
+ * ⚠️ 各家把这个开关放在不同地方(小米在「权限管理 → 其他权限」,华为在「启动管理」),
+ *    没有通用的直达 Intent。所以跳**应用详情页** —— 那是所有 Android 都有的,
+ *    再让用户从那儿进去找。文案里把三家的叫法都写上,免得他不知道找什么。
+ */
+ui.行后台弹出.on("click", function () {
+    try {
+        var it = new android.content.Intent(
+            android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            android.net.Uri.parse("package:" + context.getPackageName()));
+        it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+        context.startActivity(it);
+        toast("找「权限」或「启动管理」,把「后台弹出界面 / 关联启动 / 后台弹窗」打开");
+    } catch (e) { toast("打不开应用详情页:" + e); }
+});
+
 ui.行悬浮.on("click", function () { 求悬浮窗(); });
 /*
  * 没拿到系统权限时,整行可点 —— 那时它显示的是「未开启 ›」,跟上面两行同一个语义。
@@ -1365,11 +2043,30 @@ ui.停止钮.on("click", function () {
 /** 两个按钮共用的开跑流程。任务名只用来写日志。 */
 function 开跑(任务名, 任务) {
     if (控制.跑着) return;
+    存档上一次();               // ⚠️ 先把上一次挪走再清,别把唯一的证据冲掉
+    开过档了 = true;            // 刚挪走,档是空的,不用再补换行
     行 = [];
     当前账号名 = ""; 轮次前缀 = "";     // 用户可能手动切过号,重新认一次
     账号进度 = ""; 账号名显示 = "";
+    抓过的框 = {}; 点过分身框 = 0; 说过认不出 = {}; 说过始终提示 = false;
+    // ⚠️ 每轮重来:跑成功了这一行就自然消失,不用用户手动关
+    疑似被挡 = false;
+    遇框次数 = 0; 点掉了次数 = 0; 没点掉次数 = 0;
+    用户点掉次数 = 0; 说不清次数 = 0; 没敢点次数 = 0; 动手次数 = 0;
+    等用户点的框 = ""; 等用户点的时刻 = 0; 等用户点的快照 = 0;
+    报过深链形状 = false;
+    上次候选描述 = "";                    // 每一轮的日志里都要有那行 profile/候选清单
     控制.跑着 = true; 控制.暂停 = false; 控制.中止 = false;
     进度号 = ""; 进度名 = 任务名;
+    /*
+     * ⚠️ 悬浮条最上面那一层要不要画,**必须在建窗口之前定下来** ——
+     *    窗口高度是 setSize 写死的,建完再改就晚了:那一层会被窗口边缘直接切掉,
+     *    看不见还以为代码没生效。
+     * ⚠️ 这里读 目标包们 是安全的:启动时(文件末尾)就调过一次 定目标们() 了,
+     *    界面上「操作对象 N 个」那行用的也是它。
+     *    先放个占位,进了循环第一件事就会被「本机 1/2」覆盖掉。
+     */
+    目标进度 = 目标包们.length > 1 ? ("1/" + 目标包们.length) : "";
     开控制条();
     刷新状态();
     threads.start(function () {
@@ -1392,14 +2089,52 @@ function 开跑(任务名, 任务) {
              */
             var 多目标 = 目标包们.length > 1;
             var 各家结果 = [];
+            var 上个目标user = -1;      // 用来判断这一轮是不是换了 user
             for (var ti = 0; ti < 目标包们.length; ti++) {
                 if (控制.中止) throw 中止信号;
-                腾讯包 = 目标包们[ti];
+                用目标(目标包们[ti]);   // ⚠️ 目标包们 存的是**键**(包名#user),不能直接赋给 腾讯包
                 深链组件 = {};        // ⚠️ 换了包,深链组件必须重新解析,不然还打到上一个
+                报过启动法 = false;   // 每个目标各报一次启动法(本机和分身走的不是同一条)
+                本轮腾讯任务号 = -1;  // ⚠️ 换实例了,上一个的任务号必须作废
                 已重置过 = false;
+                /*
+                 * ⚠️ 换目标 = 换了一个**完全不同的登录态**,期望的账号名必须清掉。
+                 *    不清的话,去角色页() 那道「页面属于哪个号」的核对会拿上一个目标的
+                 *    账号名去比,每一页都判成「✗ 失败:页面属于「我是入赘」,不是「腾讯网友」」。
+                 *    踩过:本尊 + 分身 一起跑,第二个目标 7 个角色报了 2 个失败、
+                 *    而且日志前缀一直挂着上一个号的名字。
+                 */
+                当前账号名 = ""; 轮次前缀 = "";
+                账号进度 = ""; 账号名显示 = "";
                 var 这个 = null;
-                for (var ci = 0; ci < 候选.length; ci++) if (候选[ci].包名 === 腾讯包) 这个 = 候选[ci];
-                var 名字 = 这个 ? 这个.名字 : 腾讯包;
+                for (var ci = 0; ci < 候选.length; ci++)
+                    if (候选[ci].键 === 目标包们[ti]) 这个 = 候选[ci];
+                var 名字 = (这个 ? 这个.名字 : 腾讯包)
+                         + (腾讯user !== 我的user ? "(分身 user " + 腾讯user + ")" : "");
+                /*
+                 * 上一个做完了 → **回桌面** → 再拉下一个。
+                 *
+                 * ⚠️ 换 user 时这一步是**必需的**,不是排场:上一个实例还在前台,
+                 *    而它跟新目标包名相同,不让开的话 等到前台(腾讯包) 会立刻返回 true
+                 *    (等于没等),深链就可能打在还没起来的实例上。踩过:本尊+分身连跑,
+                 *    第二个目标好几页读不到内容。
+                 * 同 user 内换包名系统本来会自己换,但也一样走桌面 —— 让「换目标」
+                 * 在屏幕上始终是同一个动作,用户看得懂。
+                 */
+                if (ti > 0) {
+                    var 旧任务 = 前台腾讯任务号();
+                    诊("换目标(user " + 上个目标user + " → " + 腾讯user + "),先回桌面"
+                       + (旧任务 >= 0 ? ";旧任务号 " + 旧任务 : ""));
+                    // 控制条只有 76dp 宽,写不下全名 —— 给个够用的短标
+                    先让开((腾讯user === 我的user ? "本机" : "分身")
+                           + " " + (ti + 1) + "/" + 目标包们.length);
+                }
+                上个目标user = 腾讯user;
+                // 悬浮条最上面那一层。单目标留空 —— 那层就不画,见 条多目标加高dp
+                目标进度 = 多目标
+                    ? ((腾讯user === 我的user ? "本机" : "分身") + " " + (ti + 1)
+                       + "/" + 目标包们.length)
+                    : "";
                 if (多目标) {
                     记("");
                     记("══ 目标 " + (ti + 1) + "/" + 目标包们.length + ":" + 名字 + " ══");
@@ -1415,6 +2150,7 @@ function 开跑(任务名, 任务) {
                 if (!唤醒腾讯()) 记("  (" + 名字 + " 没能切到前台,继续试)");
 
                 上次结果 = "";
+                还有下一个目标 = (ti < 目标包们.length - 1);
                 任务();
                 if (多目标 && 上次结果) 各家结果.push(名字 + ":" + 上次结果);
             }
@@ -1427,11 +2163,27 @@ function 开跑(任务名, 任务) {
         catch (e) {
             if (e === 中止信号) 记("■ 用户中止");
             else 记("✗ 出错:" + e);
+            /*
+             * ⚠️ **异常这条路没人收尾,必须在这儿把 App 拉回来。**
+             *    正常跑完是 跑一轮/跑全部账号 末尾调 收尾前台();
+             *    但那个函数在「后面还有目标」时**故意不切回前台**(中间目标走桌面,
+             *    免得用户以为整个跑完了)。而中止正是从那两个函数里 throw 出来的 ——
+             *    抛的时候 还有下一个目标 还是 true,于是收尾只做了送腾讯回首页,
+             *    然后一路抛到这儿,状态复位了、**人还停在腾讯视频里**。
+             *    (这个洞是「换目标走桌面」那次改动带进来的;而「分身默认选两个」
+             *     之后,中止在第一个目标上就成了常见路径,于是浮出水面。)
+             * ⚠️ 先把 还有下一个目标 清掉再调 —— 不清的话 收尾前台 又会跳过。
+             *    这里直接调 回本应用() 更直白:走到 catch 就是真的不跑了。
+             */
+            还有下一个目标 = false;
+            try { 回本应用(); } catch (e2) { 诊("中止后切回前台出错:" + e2); }
         }
         finally {
             // ⚠️ 兜底复位。跑全部账号() 自己也有 finally,但万一是真异常从别处抛出来的,
             //    这里是最后一道 —— 留着 多账号进行中=true 会让**下一次运行**也没有结果。
             多账号进行中 = false;
+            目标进度 = "";            // ⚠️ 同理:留着会让下一次(哪怕是单目标)也多画一层
+            还有下一个目标 = false;   // ⚠️ 跟 多账号进行中 同理:留着会让**下一次**运行不切回前台
             控制.跑着 = false; 进度号 = ""; 进度名 = "";
             账号进度 = ""; 账号名显示 = "";
             关控制条(); 刷新状态();
@@ -1514,7 +2266,20 @@ setInterval(刷新状态, 1000);
 // 启动时记一次环境,方便用户报问题时判断是哪一种情况(受限设置?装法?系统版本?)
 (function 记环境() {
     var 来源 = String(安装来源());
-    诊("构建 " + 构建标记);
+    // ⚠️ 通道要跟在构建标记**后面**:deploy.sh 靠 "构建 <来源> <标记>" 这三段核对
+    //    手机上跑的是不是这次打的包,插在中间会把它顶掉。
+    诊("构建 " + 构建标记 + (当前通道() ? " · 通道 " + 当前通道() : ""));
+    /*
+     * ⚠️ **机型必须进日志。** 厂商的拦路框、后台启动管控、分身实现方式,全是按牌子分的;
+     *    没有这一行,一份日志发过来我只能从框的包名反推「这大概是 vivo」——
+     *    换个牌子就完全抓瞎(2026-09-17 之前就是这样)。
+     */
+    var 机型 = "?";
+    try {
+        机型 = android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL
+             + "(" + android.os.Build.BRAND + " / " + android.os.Build.DEVICE + ")";
+    } catch (e) {}
+    诊("机型:" + 机型);
     诊("环境:Android " + android.os.Build.VERSION.RELEASE
         + " (SDK " + android.os.Build.VERSION.SDK_INT + ")"
         + " · 安装来源 " + 来源
@@ -1778,14 +2543,37 @@ function 送腾讯回首页() {
         if (!it) return;
         it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK
                   | android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        context.startActivity(it);
-        sleep(1200);
+        发Intent(it);            // ← 目标在别的 user(分身)时走 startActivityAsUser
+        /*
+         * ⚠️ 这 1.2 秒不能干睡:**「拉起 App」这一步厂商一样会弹分身框**
+         *    (2026-09-17 用户视频:拉起腾讯就问要本机还是分身)。
+         *    干睡的话框会一直挂在那儿,下一步全在它后面排队。
+         *    所以边等边过框 —— 没框的机器上这就是个等价的 sleep。
+         */
+        var 到 = Date.now() + 1200;
+        while (Date.now() < 到) { 过分身框(); sleep(200); }
     } catch (e) { 诊("送腾讯回首页出错:" + e); }
 }
 
 function 回本应用() {
     送腾讯回首页();          // ⚠️ 必须在切回自己之前,不然腾讯就停在角色页上了
-    try { context.startActivity(本应用界面Intent()); } catch (e) {}
+    try { 动手了(); context.startActivity(本应用界面Intent()); } catch (e) {}
+}
+
+/*
+ * 一个目标跑完之后的前台收尾。
+ *
+ * ⚠️ 后面**还有目标**时不能把本 App 拉回前台 —— 用户原话:
+ *    「先把我们自己拉到前台好像有点不明确,以为是做完了」。
+ *    满屏都是我们的主界面 + 一条「本来就表白过 N」的结果,谁看都像整个跑完了,
+ *    其实只是第一个目标而已。
+ *    中间只做 送腾讯回首页()(这一步该做还得做,理由见那个函数),
+ *    前台留给 先让开() 的桌面 —— 桌面上什么都没发生,配上还亮着的悬浮控制条,
+ *    「还在跑、在换下一个」一眼就明白。
+ */
+function 收尾前台() {
+    if (还有下一个目标) { 送腾讯回首页(); return; }
+    回本应用();
 }
 
 /*
@@ -1799,6 +2587,45 @@ function 回本应用() {
  *      · メインのアクティビティが表示されない → 误点之后我们自己的界面就不出来了
  *    模板里那个 ⋮ 菜单是编译进去的,脚本改不掉 —— 所以唯一的办法是**根本别把用户领过去**。
  */
+/*
+ * ── 日志页的上色 ──
+ *
+ * 存进档里的还是**纯文本**([时间][诊断][账号] 内容),那份是要发给维护者的,
+ * 带样式只会碍事。只有屏幕上这一份染色。
+ *
+ * 分工:时间**蓝底加粗**当行首锚点;「诊断」和账号名去掉方括号、改用颜色区分 ——
+ * 方括号每行要占 2 个字,而屏幕本来就窄(一行日志现在要折三四行)。
+ * ⚠️ 诊断用**灰**:它是标记不是内容,该往后退;账号用绿,跟蓝色的时间分得开。
+ */
+var 色时间 = "#1a73e8", 色诊断 = "#9e9e9e", 色账号 = "#0b8043", 色内容 = "#444444";
+
+/** HTML 转义。⚠️ 日志里真的会出现 < > &(抓下来的节点文字、UserHandle{} 之类)。 */
+function 转义(s) {
+    return String(s === undefined || s === null ? "" : s)
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** 把一行 [时间][诊断][账号] 内容 拆开上色。拆不动就原样转义输出。 */
+function 染一行(l) {
+    l = String(l || "");
+    if (l.charAt(0) !== "[") return "<font color='" + 色内容 + "'>" + 转义(l) + "</font>";
+    var 收 = l.indexOf("]");
+    if (收 < 0) return "<font color='" + 色内容 + "'>" + 转义(l) + "</font>";
+    var 时 = l.substring(1, 收), 剩 = l.substring(收 + 1);
+    var 诊 = false;
+    if (剩.indexOf(诊断标记) === 0) { 诊 = true; 剩 = 剩.substring(诊断标记.length); }
+    var 号 = "";
+    if (剩.charAt(0) === "[") {
+        var 收2 = 剩.indexOf("]");
+        if (收2 > 0) { 号 = 剩.substring(1, 收2); 剩 = 剩.substring(收2 + 1); }
+    }
+    // 时间**保留方括号**(维护者指定),其余两段只留颜色
+    var 出 = "<b><font color='" + 色时间 + "'>[" + 转义(时) + "]</font></b>";
+    if (诊) 出 += " <font color='" + 色诊断 + "'>诊断</font>";
+    if (号) 出 += " <font color='" + 色账号 + "'>" + 转义(号) + "</font>";
+    return 出 + "<font color='" + 色内容 + "'>" + 转义(剩) + "</font>";
+}
+
 function 画日志页() {
     var 全 = 行;
     if (!全.length) {                                  // 界面重启过,内存里没有,回头读文件
@@ -1806,10 +2633,25 @@ function 画日志页() {
     }
     var 要显示 = 看诊断 ? 全 : 全.filter(function (l) { return l.indexOf(诊断标记) < 0; });
     var 留 = 要显示.slice(Math.max(0, 要显示.length - 300));
-    var 抬头 = (要显示.length > 留.length ? "(共 " + 要显示.length + " 行,显示最后 " + 留.length + " 行)" + 换行符 + 换行符 : "");
+    var 抬头 = (要显示.length > 留.length
+        ? "<font color='" + 色诊断 + "'>(共 " + 要显示.length + " 行,显示最后 "
+          + 留.length + " 行)</font><br><br>" : "");
+    var 正文 = 留.length
+        ? 留.map(染一行).join("<br>")
+        : "<font color='" + 色诊断 + "'>(还没有日志)</font>";
     ui.run(function () {
         ui.日志诊断.setText(看诊断 ? "隐藏诊断" : "显示诊断");
-        ui.日志全文.setText(抬头 + (留.join(换行符) || "(还没有日志)"));
+        /*
+         * ⚠️ 要 fromHtml 的**两参数**版本:单参数那个在 API 24 起是 deprecated,
+         *    而且各版本对空白/换行的处理不一样。万一哪台机器上抛了,退回纯文本 ——
+         *    日志读得到才是第一位的,好看是第二位的。
+         */
+        try {
+            var H = android.text.Html;
+            ui.日志全文.setText(H.fromHtml(抬头 + 正文, H.FROM_HTML_MODE_LEGACY));
+        } catch (e) {
+            ui.日志全文.setText(留.join(换行符) || "(还没有日志)");
+        }
         ui.日志滚动.post(function () { ui.日志滚动.fullScroll(android.view.View.FOCUS_DOWN); });
     });
 }
@@ -1992,14 +2834,220 @@ function 取深链组件(url) {
     return null;
 }
 
+/*
+ * 把 Intent 发到**当前目标所在的那个 user**。
+ *
+ * ⚠️⚠️ 普通 startActivity **永远在 caller 自己的 user 里起** —— ComponentName 里
+ *    只有 (包名, 类名) 两个字符串,没有 user 维度,前台摆着谁也不影响解析。
+ *    (实测过三次:冷启动 / 分身在前台 / 两边都预热,统统落回本机。)
+ *    唯一能带着参数跨过去的是 Context.startActivityAsUser(Intent, UserHandle)。
+ * ⚠️ 它是 @hide,只能反射调。为什么不用签名权限也能跨:分身是 parentId=0 的
+ *    **同组 profile**,AOSP 的 handleIncomingUser 对同组走 ALLOW_NON_FULL_IN_PROFILE
+ *    分支,不需要 INTERACT_ACROSS_USERS_FULL。实测(三星 DUALAPP user 95)可用,
+ *    logcat 里连 hidden API 警告都没有。
+ * ⚠️ 本项目 targetSdk=29,非 SDK 接口限制才这么宽松。**以后要是提 targetSdk,
+ *    这条可能被拦** —— 所以拿不到方法就退回普通启动(对本机目标零影响)。
+ */
+/*
+ * 前台那个腾讯窗口的**任务号**。
+ *
+ * ⚠️ 为什么需要它:currentPackage() 只给包名,而分身和本尊**包名一样** ——
+ *    从本尊切到分身时,本尊还在前台,「等到前台(腾讯包)」会立刻返回 true,
+ *    等于没等,后面的深链就可能打在还没起来的实例上(角色页变成任务根 → 白屏)。
+ *    任务是**按 user 分的**,所以任务号一变就说明换实例了。
+ * ⚠️ AccessibilityWindowInfo.getTaskId() 是 Android 14(API 34)才转正的,
+ *    老机器上没有 —— 拿不到就返回 -1,调用方必须能接受「不知道」。
+ */
+/*
+ * ⚠️ 默认**只看一眼**。刚切到前台那一瞬窗口列表可能还没登记完,多试几次才读得到,
+ *    但它是**纯诊断**的,却夹在「腾讯到前台」和「发深链」中间 ——
+ *    而唯一读不到窗口的场合恰恰是开屏广告,那正是最不该再拖 1.6 秒的时候。
+ *    读不到就返回 -1(调用方本来就容忍,-1 连日志都不打)。真要等就自己传回数。
+ */
+function 前台腾讯任务号(回数) {
+    for (var 回 = 0; 回 < (回数 || 1); 回++) {
+        try {
+            var ws = auto.service.getWindows();
+            for (var i = 0; i < ws.size(); i++) {
+                var w = ws.get(i), r = null;
+                try { r = w.getRoot(); } catch (e) { continue; }
+                if (!r) continue;
+                if (String(r.getPackageName()) !== String(腾讯包)) continue;
+                /*
+                 * ⚠️ 必须**反射**调,直接 w.getTaskId() 在 Rhino 里拿不到值
+                 *    (探针里反射能读出 28422,直接调就是 -1)。
+                 *    Android 13 及以下根本没这个方法,catch 掉当「不知道」。
+                 */
+                try {
+                    var m = w.getClass().getMethod("getTaskId");
+                    m.setAccessible(true);
+                    /*
+                     * ⚠️⚠️ **必须转成真正的 JS 数字**。invoke 返回的是 java.lang.Integer,
+                     *    Rhino 里 `Integer(28468) !== Integer(28468)` 是 **true**
+                     *    (对象不同),于是「任务号一样」也会被判成「跑到别的实例去了」。
+                     *    踩过:核对实例那次,日志写着「任务号 28468,这一轮该在 28468」
+                     *    却判失败,7 个角色全挂。>= 0 这种关系比较会自动转数字,
+                     *    所以之前一直没暴露 —— 直到用上 !==。
+                     */
+                    return Number(m.invoke(w));
+                } catch (e) { return -1; }
+            }
+        } catch (e) {}
+        sleep(400);
+    }
+    return -1;
+}
+
+/*
+ * 换操作对象之前**回桌面**。
+ *
+ * 【为什么非让开不可】
+ *   换 user 时上一个实例还在前台,而它跟新目标**包名一样** —— 不让开的话
+ *   `等到前台(腾讯包)` 会立刻返回 true(等于没等),深链就可能打在还没起来的
+ *   实例上。先把腾讯挤下去,currentPackage() 就不再是腾讯;接着拉目标、
+ *   等腾讯重新出现 —— 这时出现的必然是**新拉起的那个**。不依赖任何新 API。
+ *
+ * 【为什么是桌面,不是把我们自己的界面拉出来】
+ *   ⚠️ 原先拉的是本 App 的界面,用户反馈**看着像跑完了** —— 满屏都是我们的主界面,
+ *      谁也想不到它只是「让个位」。回桌面没有这个歧义:桌面上什么都没发生,
+ *      而半透明控制条是系统级浮层,盖在桌面上照样看得见 ——
+ *      「还在跑」这件事交给它说,而且暂停/停止在桌面上照样按得动。
+ *   顺带还省掉一次启动自己 Activity(那本身也是一次抢前台)。
+ *
+ * ⚠️ home() 走无障碍的 GLOBAL_ACTION_HOME。个别机型/场景(锁定到某个应用、
+ *    全屏游戏)会被拦,所以保留老办法当兜底 —— 宁可看着像跑完了,也不能不让开。
+ */
+function 先让开(下一步) {
+    /*
+     * 控制条上写明在换目标。
+     * ⚠️ 写完**不还原** —— 还原就会把上一个目标的最后一个角色(「7/7 陆小凤」)
+     *    重新挂回去,而接下来 唤醒腾讯 + 切号 可能要十几秒,那十几秒里
+     *    条上显示的是**已经做完的那个号的进度**,比不写还糟。
+     *    下一个目标进 跑一轮() 时会自己改成「0/N」。
+     */
+    进度号 = "换目标"; 进度名 = 下一步 || "…";
+    刷新状态();
+
+    var 让开了 = false;
+    function 等让开() {
+        for (var i = 0; i < 20; i++) {
+            /*
+             * ⚠️ 厂商的分身框一挂,currentPackage() 就不是腾讯了 —— 「让开了」会立刻成立,
+             *    可框还在那儿。早点把它点掉,免得带进下一步。
+             */
+            过分身框();
+            if (String(currentPackage()) !== String(腾讯包)) return true;
+            sleep(300);
+        }
+        return false;
+    }
+    try {
+        动手了();             // 回桌面同样会把拦路框顶掉
+        home();
+        让开了 = 等让开();
+    } catch (e) { 诊("回桌面出错:" + e); }
+    if (!让开了) {
+        诊("回桌面没成功,退回「把本应用拉到前台」让位");
+        try {
+            动手了();
+            context.startActivity(本应用界面Intent());
+            让开了 = 等让开();
+        } catch (e) { 诊("先让开出错:" + e); }
+    }
+    /*
+     * ⚠️ 停一下再拉下一个。桌面只闪一帧的话看着像卡了一下,反而更莫名其妙;
+     *    停够看清「哦,它在换下一个」就行,一秒多的代价换一个说得清的画面。
+     */
+    if (让开了) sleep(1200);
+    return 让开了;
+}
+
+/*
+ * 这次要把 Intent 送到哪个 user。
+ *
+ * ⚠️ **本机也要返回 UserHandle,不能返回 null。** 2026-09-16 vivo 用户的日志:
+ *    深链组件已经钉死成 `com.tencent.qqlive/.open.QQLiveOpenActivity`(真组件,
+ *    不是选择器),**照样**弹出 `com.vivo.doubleinstance` 的分身选择框。
+ *    也就是说 vivo 的「应用分身」是在 startActivity 这一层拦的:它看见目标包有分身,
+ *    而调用方**没说要哪个 user**,就替用户问一句。
+ *    把 user 显式说死,才是「没有歧义」这个信号 —— 普通 startActivity 表达不了。
+ * ⚠️ 送到自己这个 user 不需要任何权限(同 user)。拿不到就返回 null,
+ *    发Intent() 会退回普通 startActivity。
+ */
+function 目标UserHandle() {
+    if (腾讯user === 我的user) {
+        try { return android.os.Process.myUserHandle(); } catch (e) { return null; }
+    }
+    try {
+        var la = context.getSystemService(android.content.Context.LAUNCHER_APPS_SERVICE);
+        var ps = la.getProfiles();
+        for (var i = 0; i < ps.size(); i++) {
+            var uh = ps.get(i);
+            if (String(uh).indexOf("{" + 腾讯user + "}") >= 0) return uh;
+        }
+    } catch (e) { 诊("找目标 UserHandle 出错:" + e); }
+    诊("找不到 user " + 腾讯user + " 的 UserHandle");
+    return null;
+}
+/*
+ * ⚠️ 每个目标报一次「这次用的是哪种启动法」。
+ *    不报的话,vivo 那边的日志就分不出「显式 user 这招没用」还是
+ *    「这招根本没跑起来(方法被拦、退回了普通启动)」—— 两者要改的东西完全不同。
+ */
+var 报过启动法 = false;
+
+function 发Intent(it) {
+    动手了();                 // ⚠️ 归因要用:发了 Intent 就可能把拦路框顶掉,见 动手次数
+    var uh = 目标UserHandle();
+    if (uh) {
+        try {
+            var m = context.getClass().getMethod("startActivityAsUser",
+                        android.content.Intent.class, android.os.UserHandle.class);
+            m.invoke(context, it, uh);
+            if (!报过启动法) {
+                报过启动法 = true;
+                诊("启动法:startActivityAsUser(user " + 腾讯user + ")"
+                   + " —— 把 user 说死了,看厂商的分身框还问不问");
+            }
+            return;
+        } catch (e) {
+            报过启动法 = true;
+            诊("启动法:startActivityAsUser 用不了(" + e + "),退回普通 startActivity"
+               + (腾讯user === 我的user ? "" : " —— 会落在本机那个"));
+        }
+    }
+    if (!报过启动法) {
+        报过启动法 = true;
+        诊("启动法:普通 startActivity(拿不到 UserHandle)");
+    }
+    context.startActivity(it);
+}
+
+var 报过深链形状 = false;
+
 function 开深链(url) {
     var it = new android.content.Intent(android.content.Intent.ACTION_VIEW,
         android.net.Uri.parse(url));
-    it.setPackage(腾讯包);
     var cn = 取深链组件(url);
+    /*
+     * ⚠️ **钉了组件就不再 setPackage。**
+     *    组件本身已经把包名和类名都说死了,setPackage 是冗余的;
+     *    而厂商的「应用分身」钩子很可能就是看 `intent.getPackage()` 判断
+     *    「这个目标有没有分身」—— 不带它也许就绕过去了。
+     *    这是**一注**,不是定论:绕不过去也没有副作用(显式组件照样精确路由),
+     *    而且每轮日志会打「本轮分身框弹了几次」,跟上一版一比就知道有没有用。
+     * ⚠️ 组件没解析出来(老系统 / 腾讯改结构)时**必须**留 setPackage,
+     *    否则就成了隐式 Intent,系统选择器一定弹,比现在还糟。
+     */
     if (cn) it.setComponent(cn);
+    else it.setPackage(腾讯包);
+    if (!报过深链形状) {
+        报过深链形状 = true;
+        诊("深链形状:" + (cn ? "只钉组件(不带 setPackage,试着绕开厂商分身框)"
+                              : "只钉包名(组件没解析出来)"));
+    }
     it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
-    context.startActivity(it);
+    发Intent(it);            // ← 目标在别的 user(分身)时走 startActivityAsUser
 }
 
 
@@ -2014,14 +3062,74 @@ function 开深链(url) {
  *    先用启动器 Intent 把首页顶成根,深链再叠在上面,就跟人手点进去完全一样。
  * ⚠️ 腾讯已经在跑的话,这一步只是把它切到前台,不花时间;冷启动那几秒本来也躲不掉。
  */
-function 唤醒腾讯(超时毫秒) {
+/*
+ * 这一轮认定的「目标实例」的任务号。-1 = 还不知道(老系统读不到任务号)。
+ *
+ * ⚠️ 为什么需要它:**账号名证明不了我们在哪个实例里** —— 同一个账号完全可以
+ *    同时登在本机和分身,那时两边的「页面账号」一模一样(2026-09-17 用户指出)。
+ *    而任务是**按 user 分的**,本机和分身的腾讯永远在两个不同的 task 里
+ *    (三星实测 28468 / 28469),跟登的是谁无关。
+ */
+var 本轮腾讯任务号 = -1;
+var 说过没任务号 = false;
+
+/*
+ * 用 LauncherApps 把目标实例叫到前台。
+ *
+ * ⚠️ 为什么优先它,而不是 startActivity(启动器 Intent):
+ *    它带**显式 UserHandle** —— 桌面自己开分身用的就是这条路,
+ *    起来的是我们点名的那个实例,不用靠点框去决定。
+ * ⚠️⚠️ **不要以为「厂商不问它」。** 我一度这么写过,被用户日志打脸:
+ *    2026-09-17 vivo 的日志里,`唤醒腾讯` 这一步(走的就是 LauncherApps)照样弹了
+ *    `com.vivo.doubleinstance`;分身那一轮弹的是 `com.vivo.appfilter`。
+ *    判据是**日志顺序**:「腾讯到前台,任务号 N」是 等到前台() 返回之后才打的,
+ *    而那个框是在 等到前台() 的循环里点掉的 —— 那时深链一行都还没发。
+ * ⚠️ 它**带不了参数**,只能「把它叫起来」,深链还得另发 —— 那一条照样会被问。
+ */
+function 用启动器拉起() {
     try {
-        var it = context.getPackageManager().getLaunchIntentForPackage(腾讯包);
-        if (!it) { 诊("唤醒腾讯:拿不到启动 Intent"); return false; }
-        it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
-        context.startActivity(it);
-    } catch (e) { 诊("唤醒腾讯出错:" + e); return false; }
-    return 等到前台(腾讯包, 超时毫秒 || 15000);
+        var la = context.getSystemService(android.content.Context.LAUNCHER_APPS_SERVICE);
+        var uh = 目标UserHandle();
+        if (!la || !uh) return false;
+        var al = la.getActivityList(腾讯包, uh);
+        if (!al || al.size() === 0) return false;
+        动手了();             // 同 发Intent:这一下也会改变前台
+        la.startMainActivity(al.get(0).getComponentName(), uh, null, null);
+        return true;
+    } catch (e) { 诊("LauncherApps 拉不起来(" + e + "),退回普通启动"); return false; }
+}
+
+function 唤醒腾讯(超时毫秒) {
+    var 走的 = "";
+    if (用启动器拉起()) {
+        走的 = "LauncherApps(user 说死了)";
+    } else {
+        try {
+            var it = context.getPackageManager().getLaunchIntentForPackage(腾讯包);
+            if (!it) { 诊("唤醒腾讯:拿不到启动 Intent"); return false; }
+            it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+            发Intent(it);            // ← 目标在别的 user(分身)时走 startActivityAsUser
+            走的 = "启动器 Intent";
+        } catch (e) { 诊("唤醒腾讯出错:" + e); return false; }
+    }
+    var 成 = 等到前台(腾讯包, 超时毫秒 || 15000);
+    if (成) {
+        /*
+         * ⚠️ 这一刻记下来的任务号,就是「这一轮该待的那个实例」。
+         *    是用 LauncherApps 起的话它百分百可信(user 是我们指定的);
+         *    退回普通启动的话,它至少还能发现「后来跑到另一个实例去了」。
+         */
+        本轮腾讯任务号 = 前台腾讯任务号();
+        if (本轮腾讯任务号 >= 0)
+            诊("腾讯到前台,任务号 " + 本轮腾讯任务号 + "(要的是 user " + 腾讯user
+               + ",走的 " + 走的 + ")");
+        else if (!说过没任务号) {
+            说过没任务号 = true;
+            诊("腾讯到前台(走的 " + 走的 + "),但这台机器读不到任务号"
+               + "(Android 14 以下),只能靠账号名核对实例");
+        }
+    }
+    return 成;
 }
 
 /*
@@ -2036,17 +3144,46 @@ function 重置腾讯() {
         if (!it) return false;
         it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK
                   | android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK);
-        context.startActivity(it);
+        发Intent(it);            // ← 目标在别的 user(分身)时走 startActivityAsUser
     } catch (e) { 诊("重置腾讯出错:" + e); return false; }
     sleep(2000);
     return 等到前台(腾讯包, 15000);
 }
 
+/**
+ * 窗口列表里有没有这个包的窗口。单次,不 sleep。
+ * ⚠️ 这是 currentPackage() 之外的**第二只眼**,见 等到前台() 那段注释。
+ */
+function 窗口里有(包名) {
+    try {
+        var ws = auto.service.getWindows();
+        for (var i = 0; i < ws.size(); i++) {
+            var r = null;
+            try { r = ws.get(i).getRoot(); } catch (e) { continue; }
+            if (r && String(r.getPackageName()) === String(包名)) return true;
+        }
+    } catch (e) {}
+    return false;
+}
+
+/*
+ * 等某个包到前台。
+ *
+ * ⚠️⚠️ **两条判据,不能只认 currentPackage()。**
+ *    腾讯的**开屏广告页不给无障碍发事件** —— 实测冷启动碰上广告时:
+ *      系统侧 `SplashHomeActivity` +585ms 就 resumed 了,
+ *      而 currentPackage() **15 秒都还停在桌面上**。
+ *    只认 currentPackage() 的话这 15 秒是纯空等(超时了才往下走),
+ *    用户看到的现象就是「拉起腾讯之后在干等广告放完」。
+ *    窗口列表(getWindows)是另一条路,广告页在不在里面看得见。
+ */
 function 等到前台(包名, 超时毫秒) {
     var 截止 = Date.now() + 超时毫秒;
     while (Date.now() < 截止) {
         if (控制.中止) throw 中止信号;        // 停止要立刻响应,不等这一轮超时
         if (currentPackage() === 包名) return true;
+        if (窗口里有(包名)) return true;
+        过分身框();     // ⚠️ 厂商的分身框会挡在这儿,不点掉就一直等到超时
         sleep(300);
     }
     return false;
@@ -2058,6 +3195,7 @@ function 等Activity(关键字, 超时毫秒) {
         if (控制.中止) throw 中止信号;
         var a = currentActivity() || "";
         if (a.indexOf(关键字) >= 0) return true;
+        过分身框();
         sleep(300);
     }
     return false;
@@ -2217,23 +3355,663 @@ function 签一个(角色) {
  *
  * 这一个循环顺带兜住了:用户切走了前台、系统弹窗、来电、深链没生效、页面加载慢。
  */
+/* ══════════════ 厂商的「应用分身」选择框 ══════════════
+ *
+ * 【什么东西】
+ *   vivo 用户 2026-09-16 的日志:深链已经钉死成腾讯的**真组件**
+ *   (com.tencent.qqlive/.open.QQLiveOpenActivity),照样弹出
+ *   **com.vivo.doubleinstance** 的框问「用哪个」。
+ *   它不是 AOSP 的选择器(那个包名是 `android`),是厂商自己的 App,
+ *   拦在 startActivity 这一层:目标包有分身、调用方又没说要哪个 user,就替用户问。
+ *
+ * 【为什么这段是「隔空写」的】
+ *   开发机是三星,没有这个 App,**造不出这个框**。所以原则是:
+ *     ① 先把框长什么样**原样抓进日志** —— 没有这个,下一轮改还是瞎猜
+ *     ② 只在**认得出**的时候才替用户点:候选文字必须含腾讯的应用名。
+ *        认不出宁可不动 —— 点错就是开了另一个实例,账号核对会判失败,查起来更乱。
+ * ⚠️ 别把①删了只留②。真治好了也要留着,换个厂商就是另一套文案。
+ */
+/*
+ * 厂商拦路框的包名关键字。**不止「选本机还是分身」那一个**。
+ * vivo 实测有两个,长得完全不一样:
+ *   · com.vivo.doubleinstance —— 「选择要使用的应用」,里面是 id=main / id=clone 两条
+ *   · com.vivo.appfilter      —— 「"小菇爱表白"想要打开"腾讯视频"」,
+ *                                 底下是「始终打开 / 仅打开一次 / 取消」
+ * ⚠️ 2026-09-17 分身那一轮就栽在第二个上:关键字里没有它 → 认不出来 → 干等到超时
+ *    → 「✗ 打不开切换账号面板」。加关键字这件事**比认框内结构更要紧**,
+ *    认不出来的话后面那些聪明劲一点用都没有。
+ */
+var 分身框关键字 = ["doubleinstance", "dualinstance", "dualapp", "doubleapp", "clone",
+                    "appfilter"];
+/*
+ * 已经抓过结构的框(按**包名**记)。
+ * ⚠️ 原先是「一轮一个布尔开关」—— 第一个框抓完就关了,于是同一轮里**第二种框**
+ *    一个节点都打不出来。vivo 有两个框(doubleinstance 和 appfilter),
+ *    2026-09-17 那份日志里 appfilter 就只剩一行「点完前台是:com.vivo.appfilter」,
+ *    等于没线索,白等一轮。每个包各抓一次:既不刷屏,又不会漏掉新面孔。
+ */
+var 抓过的框 = {};
+var 点过分身框 = 0;        // 这一轮替用户点了几次(vivo 是每发一次深链弹一次,十几次很正常)
+var 说过认不出 = {};       // 「认不出这个框该点哪」——按包名各说一次(同上)
+var 遇框次数 = 0;          // 这一轮一共撞上几次框 —— 用来比较「不带 setPackage」有没有用
+/*
+ * 「跳转被系统静默挡掉」的嫌疑。
+ *
+ * ⚠️ 小米/红米的「后台弹出界面」、华为的「关联启动」、OPPO/一加的「后台弹窗」——
+ *    关掉之后,App **在后台** startActivity 会被**静默丢弃**:不抛异常、没有框、
+ *    什么都不发生。而我们除了第一次唤醒,后面每一条深链都是在后台发的
+ *    (前台是腾讯),所以这类机器上会表现成「第一个角色就卡住,而且毫无线索」。
+ * ⚠️ 判据必须**同时**满足:深链重发到头了 + 腾讯就在前台(说明 App 是活的)
+ *    + 这一路**一个拦路框都没撞上**(撞上了那就是框的锅,不是这个)。
+ */
+var 疑似被挡 = false;
+var 点掉了次数 = 0, 没点掉次数 = 0;   // ⚠️ 要分开记:分不清的话,「其实是用户自己手点的」这种事会被当成成功
+/*
+ * ── 这一框到底是谁点掉的 ──
+ *
+ * ⚠️ 先说清楚**做不到什么**:无 root 的普通 App **拿不到「这一下是不是手指点的」**。
+ *    AccessibilityEvent 不带来源(performAction 和手指点发出来的事件一模一样);
+ *    TYPE_TOUCH_INTERACTION_* 只在触摸浏览模式下才发,开了整机操作方式就变了;
+ *    onMotionEvent 要在无障碍服务的 XML 里声明 motionEventSources,模板里没有,
+ *    而那个 XML 在 APK 里、改不了;events.observeTouch() 读 /dev/input,要 root。
+ *
+ * 所以走**排除法**:能让框消失的施力者是有限的几个,把「是我们」排干净,剩下的就是用户。
+ * 这不是推理,前提是**排干净** —— 而漏掉任何一个施力者,结论就是错的。
+ *
+ * 要归因给用户,下面三条必须同时成立:
+ *   ① 框不见了(或换成了别的框)
+ *   ② 从记下它那一刻起,我们**一次都没再点过**
+ *   ③ 从记下它那一刻起,我们**没发过任何 Intent / 没回过桌面**
+ *      ⚠️ ③ 是第一版漏掉的那条,而且它是**真会发生**的:点不动的时候重发计时器照常走,
+ *         2.2 秒后又发一条深链 —— 框被新 Activity 顶掉,看起来跟用户点掉一模一样。
+ *
+ * ①②③ 不全的,记成「说不清」,**不许算到用户头上** ——
+ * 宁可说不知道,也不要再出现一次「日志说得漂亮,其实全是用户手点的」。
+ */
+var 动手次数 = 0;           // 我们每做一件可能改变前台的事就 +1,见 动手了()
+/** 我们动手了:点了、发了 Intent、回了桌面 …… 凡是可能让前台变样的都要记一笔。 */
+function 动手了() { 动手次数++; }
+
+var 等用户点的框 = "";      // 我们点不动、正等着用户自己动手的那个框(包名)
+var 等用户点的时刻 = 0;
+var 等用户点的快照 = 0;     // 记下它那一刻的 动手次数;之后我们再动手,这个数就对不上了
+var 用户点掉次数 = 0;
+var 说不清次数 = 0;
+// 「我们根本没点」的次数(认不出该点哪、或撞框次数超上限)。⚠️ 跟「点了没生效」是两回事,
+// 混在一起会看不出「到底是点不动,还是压根没敢动手」—— 排障时这两件事的下一步完全不同。
+var 没敢点次数 = 0;
+
+function 是分身框(包) {
+    var p = String(包 || "").toLowerCase();
+    if (!p) return false;
+    for (var i = 0; i < 分身框关键字.length; i++)
+        if (p.indexOf(分身框关键字[i]) >= 0) return true;
+    return false;
+}
+
+/*
+ * ── 认不出来的框怎么办 ──
+ *
+ * 白名单只覆盖我们**见过**的厂商(vivo 的两个)。华为、小米、OPPO、荣耀、一加
+ * 各有各的包名,一个都不知道。认不出来的后果不是「少点一下」,而是**整轮卡死**:
+ * 等到前台一直等不到 → 超时 → 失败,而且**日志里连结构都没有**,查都没法查。
+ * (2026-09-17 的 com.vivo.appfilter 就是这么白白废掉一轮的。)
+ *
+ * 所以加一条**跟厂商无关的处境判据**:
+ *   我刚发了 Intent 想打开腾讯;现在前台既不是腾讯、不是我们自己、也不是桌面
+ *   —— 那前台这个东西八成就是拦路的。
+ * (这几个函数只在「发完 Intent 之后的等待循环」里被调,所以「刚发过 Intent」是天然成立的。)
+ *
+ * ⚠️ 对**疑似**的框要保守:**只抓结构 + 只在证据够硬时才点**
+ *    (认出两条含目标应用名的条目、或认出「仅一次/始终」那类按钮)。
+ *    白名单里那种「只剩一颗 Button 就点它」的兜底**不能**用在未知框上 ——
+ *    万一前台是来电、是某个系统授权框,那一下点下去后果不可控。
+ * ⚠️ 脚本能远程更新:只要结构进了日志,加一条规则是**几分钟**的事,不用发 APK。
+ *    所以这里的目标不是「猜中所有厂商」,而是**保证每次失败都能一次带回全部线索**。
+ */
+var 桌面包们 = null;
+function 是桌面(包) {
+    if (桌面包们 === null) {
+        桌面包们 = {};
+        var 名单 = [];
+        try {
+            var it = new android.content.Intent(android.content.Intent.ACTION_MAIN);
+            it.addCategory(android.content.Intent.CATEGORY_HOME);
+            var 表 = context.getPackageManager().queryIntentActivities(it, 0);
+            for (var i = 0; i < 表.size(); i++) {
+                var ai = 表.get(i).activityInfo;
+                var 类 = String(ai.name || "");
+                /*
+                 * ⚠️ **不能照单全收。** `com.android.settings.FallbackHome` 也注册了
+                 *    CATEGORY_HOME —— 那是开机后、解锁前顶着的占位界面。
+                 *    收下它 = **整个「设置」App 都被当成桌面**,于是设置页永远不会被
+                 *    判成拦路框,未知框兜底在它身上整个失效。
+                 *    2026-09-19 实测:把设置页顶到前台,脚本只记一句「还没到位(别的App)」,
+                 *    结构一个字都不抓 —— 这正是兜底最不该失灵的地方。
+                 * ⚠️ 别改成「按包名排除 com.android.settings」:换个牌子占位界面就换了包名。
+                 *    认类名里的 FallbackHome 才是跟厂商无关的判法。
+                 */
+                if (类.indexOf("FallbackHome") >= 0) continue;
+                桌面包们[String(ai.packageName)] = true;
+                名单.push(String(ai.packageName));
+            }
+        } catch (e) { 诊("查桌面包出错:" + e); }
+        // 进日志:换个牌子桌面是哪个包、有几个,只能靠用户这份日志才知道
+        诊("桌面包:" + (名单.join(",") || "(一个都没查到)"));
+    }
+    return !!桌面包们[String(包 || "")];
+}
+
+// 这些冒出来不算「拦路」:系统界面(下拉通知栏、音量条)、输入法之类
+var 不算拦路 = ["com.android.systemui", "inputmethod", "ime", "com.android.launcher"];
+
+function 疑似拦路(包) {
+    var p = String(包 || "");
+    if (!p || p === "?" || p === "null") return false;
+    if (p === String(腾讯包)) return false;
+    try { if (p === String(context.getPackageName())) return false; } catch (e) {}
+    if (是桌面(p)) return false;
+    var 小 = p.toLowerCase();
+    for (var i = 0; i < 不算拦路.length; i++) if (小.indexOf(不算拦路[i]) >= 0) return false;
+    return true;
+}
+
+/** 前台在拦路吗。返回 "已知" / "疑似" / "" */
+function 拦路中(包) {
+    if (是分身框(包)) return "已知";
+    if (疑似拦路(包)) return "疑似";
+    return "";
+}
+
+/** 把节点树里「有文字、有描述、或者可点」的节点摊平收出来。最多 40 个,够看了 */
+function 摊平节点(n, 出) {
+    if (!n || 出.length >= 40) return;
+    var 文 = "", 描 = "", 类 = "", 号 = "", 可 = false;
+    try { 文 = String(n.getText() || ""); } catch (e) {}
+    try { 描 = String(n.getContentDescription() || ""); } catch (e) {}
+    try { 类 = String(n.getClassName() || ""); } catch (e) {}
+    // ⚠️ viewId 是最稳的判据:这台机器是日文系统,按文字认「仅此一次」会认成
+    //    「1 回のみ」。AOSP 选择器那两颗钮的 id 固定是 android:id/button_once / button_always。
+    try { 号 = String(n.getViewIdResourceName() || ""); } catch (e) {}
+    try { 可 = n.isClickable(); } catch (e) {}
+    if (文 || 描 || 可) {
+        var r = new android.graphics.Rect();
+        try { n.getBoundsInScreen(r); } catch (e) {}
+        出.push({ 文: 文, 描: 描, 类: 类.replace("android.widget.", ""), 号: 号,
+                  可: 可, 框: r, 点: n });
+    }
+    var c = 0;
+    try { c = n.getChildCount(); } catch (e) {}
+    for (var i = 0; i < c; i++) {
+        var k = null;
+        try { k = n.getChild(i); } catch (e) {}
+        if (k) 摊平节点(k, 出);
+    }
+}
+
+/** 那个框的窗口根节点。⚠️ 要按包名找窗口,rootInActiveWindow 未必是它 */
+/*
+ * 那个框的窗口根节点。
+ * ⚠️ 必须按**包名相等**找,不能按关键字找。演练时按关键字找,抓到的是三星的
+ *    边缘面板(它也在窗口列表里,包名里也带 android)—— 结果一个条目都没读到,
+ *    还以为是框不给无障碍看。屏幕上同时有好几个窗口是常态,别猜。
+ * ⚠️ rootInActiveWindow 只当兜底:框弹出来的那一瞬它可能还是上一个页面。
+ */
+function 分身框节点(包) {
+    var 根 = null;
+    try {
+        var ws = auto.service.getWindows();
+        for (var i = 0; i < ws.size(); i++) {
+            var r = null;
+            try { r = ws.get(i).getRoot(); } catch (e) { continue; }
+            if (!r) continue;
+            var p = "";
+            try { p = String(r.getPackageName() || ""); } catch (e) {}
+            if (p === String(包)) { 根 = r; break; }
+        }
+    } catch (e) {}
+    if (!根) { try { 根 = auto.service.getRootInActiveWindow(); } catch (e) {} }
+    var 出 = [];
+    if (根) 摊平节点(根, 出);
+    return 出;
+}
+
+/** 目标那个 App 在系统里叫什么(「腾讯视频」),用来在框里认条目 */
+function 目标应用名() {
+    try {
+        var pm = context.getPackageManager();
+        return String(pm.getApplicationLabel(pm.getApplicationInfo(腾讯包, 0)) || "");
+    } catch (e) { return ""; }
+}
+
+/*
+ * 选择框的「确认」钮。⚠️ 这类框是**两步**的:先点条目,再按一次确认 ——
+ * 三星的系统选择器演练时就卡在这:条目点中了,框还在,因为还有
+ * 「1 回のみ / 常時」(仅此一次 / 始终)没按。vivo 那个大概率也是这个套路。
+ *
+ * 认的顺序:
+ *   ① viewId 带 once(AOSP 固定是 android:id/button_once)—— 跨语言最稳
+ *   ② 文字/描述像「仅此一次」
+ * ⚠️ **绝不点「始终」那颗**:它会把默认行为永久钉死,以后想操作另一个实例就麻烦了,
+ *    而且用户没让我们改系统设置。认不出来就不点,把钮打进日志让用户自己按一下。
+ */
+var 只此一次词 = ["仅此一次", "只此一次", "仅一次", "仅打开一次", "打开一次", "本次",
+                  "回のみ", "just once", "only once", "allow once"];
+/*
+ * 「始终打开 / 总是允许」那一颗。
+ *
+ * ⚠️ 对**跳转确认框**(「小菇爱表白想要打开腾讯视频」)要**优先点它**:
+ *    它授的权就是这一对 App —— 而「让这个 App 去开腾讯视频」正是用户装它、
+ *    按下「开始表白」时想要的事。按一次以后不再问;不按的话一轮要被打断几十次。
+ *    (2026-09-17 维护者决定。撤销的路也留着:vivo 是 设置 → 应用与权限 → 跳转管控。)
+ * ⚠️ 但**不要**拿它去点别的框:比如系统选择器的「始终」是给某个 scheme 定默认应用,
+ *    范围比「这一对 App」大得多,而且对「同包名两个实例」根本无效
+ *    (preferred activity 的键是 ComponentName,存不下 user)。
+ *    所以只有走到「这框里没有 main/clone」那一支时才要永久。
+ */
+var 始终词 = ["始终", "总是", "常時", "always", "永远", "每次都"];
+/*
+ * ⚠️ 这些**绝不能点**。vivo 的「打开确认」框底下是「始终打开 / 仅打开一次 / 取消」——
+ *    万一「仅打开一次」因为文案不同没认出来,而「取消」正好是唯一剩下的 Button,
+ *    兜底逻辑就会去点它:框是消失了,腾讯**没打开**,然后无限重试。
+ *    宁可不点、让用户自己按。
+ */
+var 别点词 = ["取消", "关闭", "cancel", "close", "不允许", "拒绝", "以后再说", "返回"];
+
+var 说过始终提示 = false;
+
+/** 框里有没有「始终/总是」那颗 —— 有的话提示用户自己点一次可以永久免掉 */
+function 有始终那颗(条) {
+    for (var i = 0; i < 条.length; i++) {
+        var 全 = String(条[i].文 || "") + " " + String(条[i].描 || "");
+        for (var a = 0; a < 始终词.length; a++) if (全.indexOf(始终词[a]) >= 0) return true;
+    }
+    return false;
+}
+
+function 找确认钮(条, 要永久, 保守) {
+    var 钮 = [];
+    /*
+     * 要永久的话,**先找「始终打开」那颗**。找不到再退回「仅一次」——
+     * 各家文案不一样,总不能因为没有「始终」就卡住。
+     */
+    if (要永久) {
+        for (var p = 0; p < 条.length; p++) {
+            var q = 条[p];
+            if (!q.可) continue;
+            var 文述 = (String(q.文 || "") + " " + String(q.描 || "")).toLowerCase();
+            var 别 = false;
+            for (var d = 0; d < 别点词.length; d++) if (文述.indexOf(别点词[d]) >= 0) 别 = true;
+            if (别) continue;
+            for (var a2 = 0; a2 < 始终词.length; a2++)
+                if (文述.indexOf(始终词[a2]) >= 0 || String(q.号).indexOf("always") >= 0) return q;
+        }
+    }
+    for (var i = 0; i < 条.length; i++) {
+        var e = 条[i];
+        if (!e.可) continue;
+        var 全 = (e.文 + " " + e.描).toLowerCase();
+        var 是始终 = false;
+        for (var a = 0; a < 始终词.length; a++)
+            if (全.indexOf(始终词[a]) >= 0 || String(e.号).indexOf("always") >= 0) 是始终 = true;
+        if (是始终) continue;                       // 没要永久的话,「始终」不点
+        var 别点 = false;
+        for (var c = 0; c < 别点词.length; c++)
+            if (全.indexOf(别点词[c]) >= 0 || String(e.号).indexOf("cancel") >= 0) 别点 = true;
+        if (别点) continue;                         // ⚠️ 「取消」更不能点,见 别点词
+        if (String(e.号).indexOf("once") >= 0) return e;
+        for (var b = 0; b < 只此一次词.length; b++)
+            if (全.indexOf(只此一次词[b]) >= 0) return e;
+        if (e.类.indexOf("Button") >= 0) 钮.push(e);
+    }
+    // ⚠️ 保守模式(没见过的框)**不用**这条兜底:那一颗到底是什么我们并不知道
+    if (保守) return null;
+    return 钮.length === 1 ? 钮[0] : null;          // 只剩一颗没歧义;两颗以上不猜
+}
+
+
+/**
+ * 手势点。⚠️ **落点是当场从这个节点身上读出来的**(getBoundsInScreen),
+ *    不是写死的坐标 —— 换手机、换分辨率它自己会变。
+ * ⚠️ 但手势终究是「打在屏幕某一点上,谁盖在上面谁收走」,所以它只能当**最后一招**:
+ *    结构点(performAction)是直接投给那个节点的,不会被别的窗口截胡。
+ * ⚠️ 派发之前把悬浮条设成不接收触摸,免得点到自己。
+ */
+function 手势点(项) {
+    动手了();                 // 我们点了 —— 之后框消失就不能算在用户头上
+    try {
+        var r = new android.graphics.Rect();
+        // 先 refresh 再读:框是几百毫秒前抓的,期间可能已经重排
+        try { 项.点.refresh(); } catch (e) {}
+        try { 项.点.getBoundsInScreen(r); } catch (e) { r = 项.框; }
+        if (r.width() <= 0 || r.height() <= 0) r = 项.框;
+        try { if (控制条) 控制条.setTouchable(false); } catch (e) {}
+        var 成 = click(r.centerX(), r.centerY());
+        try { if (控制条) 控制条.setTouchable(true); } catch (e) {}
+        return !!成;
+    } catch (e) { return false; }
+}
+
+/** 结构点:节点自己或最近的可点祖先。返回的只是「派发出去了」,**不代表有效** */
+function 结构点(项) {
+    动手了();                 // 同上:哪怕 performAction 没生效,也算我们动过手
+    var n = 项.点;
+    for (var i = 0; i < 6 && n; i++) {
+        var 可 = false;
+        try { 可 = n.isClickable(); } catch (e) {}
+        if (可) {
+            try { if (n.performAction(16)) return true; } catch (e) {}   // 16 = ACTION_CLICK
+        }
+        try { n = n.getParent(); } catch (e) { break; }
+    }
+    return false;
+}
+
+/** 等那个框消失。等到了返回 true */
+function 等框消失(毫秒) {
+    var 截止 = Date.now() + (毫秒 || 1500);
+    while (Date.now() < 截止) {
+        if (!拦路中(currentPackage())) return true;
+        sleep(150);
+    }
+    return !拦路中(currentPackage());
+}
+
+/*
+ * 点框里的一条,并且**验证它真的被点掉了**。
+ *
+ * 顺序:**结构优先,手势垫底**。
+ *   ① 结构点这一条(或它最近的可点祖先)
+ *   ② 结构点它里面那个文字节点 —— 有的机型容器不吃、文字才吃
+ *   ③ 都不行才手势,落点取自节点自己的 bounds
+ *
+ * ⚠️⚠️ 每一步都要**验框消没消失**。踩过大跟头:原先只看
+ *    `performAction(ACTION_CLICK)` 的返回值就当成功 —— 那个值只代表**动作派发出去了**,
+ *    如果那个 View 是自己处理触摸事件(不是 OnClickListener)就根本不响应。
+ *    于是日志一片「无障碍点击」,实际每次都是用户自己手点掉的,我还拿它当修好了汇报。
+ *    (2026-09-17 用户纠正。)**没验证过消失,就不算点掉。**
+ */
+function 点掉框里的(项) {
+    if (结构点(项) && 等框消失(1200)) return "结构点掉了";
+    if (项.文子 && 结构点(项.文子) && 等框消失(1200)) return "点文字点掉了";
+    if (手势点(项) && 等框消失(1500)) return "手势点掉了(落点取自节点)";
+    return "点了但框还在";
+}
+
+/**
+ * 前台要是厂商的分身框,就抓结构 + 尽量替用户选。返回有没有点过。
+ * ⚠️ 每轮循环都会调,所以前面那个判断必须极便宜(只比一次包名)。
+ */
+/*
+ * 「谁点掉的」这本账记在**外面这一层**。
+ *
+ * ⚠️ 为什么不能记在里面:过框内部() 有 5 条出口(没框 / 超上限 / 跳转框点完 /
+ *    认不出该点哪 / 正常点完)。原先只在最后那条出口记账,于是**认不出的那些框
+ *    一次都没进账** —— 实测撞框 4 次,统计里全是 0(2026-09-19)。
+ *    包一层之后,不管里面从哪条路返回,进门结算和出门记账都跑得到。
+ */
+function 过分身框() {
+    var 包 = String(currentPackage() || "");
+    /*
+     * ① 进门先结算上一趟留下的那个「我们点不动」的框:它现在不见了(或换成了别的框),
+     *    而我们从那以后一次都没再点过 —— 那就是**用户自己点掉的**。见变量那段注释。
+     */
+    if (等用户点的框 && 等用户点的框 !== 包) {
+        var 等了 = Math.round((Date.now() - 等用户点的时刻) / 1000);
+        if (动手次数 === 等用户点的快照) {          // ③ 这段时间我们确实什么都没干
+            用户点掉次数++;
+            if (用户点掉次数 <= 2)                  // 一轮几十次的话,细节只说前两次,末尾有统计
+                记("    ⚠️ 上一个框(" + 等用户点的框 + ")是**你自己点掉的** —— "
+                   + "我们点不动、这期间也没再动过手,等了 " + 等了 + " 秒");
+        } else {
+            说不清次数++;
+            if (说不清次数 <= 2)
+                记("    上一个框(" + 等用户点的框 + ")没了,但这期间我们自己也动过手"
+                   + "(发过 Intent 或回过桌面),**说不清是谁弄掉的**,等了 " + 等了 + " 秒");
+        }
+        等用户点的框 = ""; 等用户点的时刻 = 0;
+    }
+    if (!拦路中(包)) return false;
+
+    过框内部();                                     // ② 真正的处理,爱从哪条路返回都行
+
+    /*
+     * ③ 出门记账:结论只看**这一趟全部做完之后**的前台,不看某一下点击的返回值 ——
+     *    「两步框」的第二下还会再按一次,第一下没点掉不代表最后没点掉。
+     */
+    var 还挡着 = !!拦路中(currentPackage());
+    if (还挡着) {
+        if (等用户点的框 !== 包) { 等用户点的框 = 包; 等用户点的时刻 = Date.now(); }
+        /*
+         * ⚠️ 快照**每一趟都刷新**:我们这一趟又动过手了,「我们没动手」得从现在重新算。
+         *    不刷新的话,点了五次都没点动、最后用户自己点掉 —— 会被记成「说不清」。
+         *    等的时长(等用户点的时刻)不重置,那记的是这个框一共杵了多久。
+         */
+        等用户点的快照 = 动手次数;
+    } else {
+        等用户点的框 = ""; 等用户点的时刻 = 0;
+    }
+    return 还挡着 ? "没点掉" : "点掉";
+}
+
+function 过框内部() {
+    var 包 = String(currentPackage() || "");
+    var 类型 = 拦路中(包);
+    if (!类型) return false;
+    var 保守 = (类型 === "疑似");     // 认不出来的框:只在证据够硬时才点
+
+    遇框次数++;
+    var 条 = 分身框节点(包);
+    if (!抓过的框[包]) {
+        抓过的框[包] = true;
+        记(保守
+           ? "  ⚠️ 前台是「" + 包 + "」—— 既不是腾讯、不是本应用、也不是桌面,"
+             + "当成拦路框处理。它长这样(没见过的框,请把日志发给维护者):"
+           : "  ⚠️ 撞上厂商的拦路框(" + 包 + "),原样抓下来:");
+        for (var i = 0; i < 条.length && i < 24; i++) {
+            var e = 条[i];
+            记("    " + (i + 1) + ". 文[" + e.文 + "] 述[" + e.描 + "] " + e.类
+               + (e.号 ? " id=" + e.号.replace(包 + ":id/", "") : "")
+               + (e.可 ? " 可点" : "") + " (" + e.框.centerX() + "," + e.框.centerY() + ")");
+        }
+        if (!条.length) 记("    (一个节点都读不到 —— 这个框可能不给无障碍看)");
+    }
+
+    /*
+     * ⚠️ 上限**不能设得小**。vivo 是**每发一次深链弹一次** —— 一轮 7 个角色、
+     *    再加切号那几下,十几次是常态。原先写 2,第三次开始就撒手不管了。
+     *    留个大数只是防跑飞(真跑到这个数说明点不动,再点也没用)。
+     */
+    if (点过分身框 >= 200) { 没敢点次数++; return false; }
+    var 要本机 = (腾讯user === 我的user);
+
+    /*
+     * 挑哪一条。两条路,先 id 后文字:
+     *   ① **viewId**:vivo 自己标得清清楚楚 —— `…:id/main` 是本机、`…:id/clone` 是分身。
+     *      这是 2026-09-17 用户日志里抓回来的,比按文字猜准得多:跨语言、
+     *      跟应用名改不改无关,而且分身跟本机**显示名可能一模一样**(三星就是)。
+     *   ② 认不出 id 才退回按应用名找,再取**文字最短**那条当本尊
+     *      (分身的名字是在本尊上加东西,vivo 加「Ⅱ·」前缀)。
+     */
+    var 要 = null, 靠 = "";
+    for (var i2 = 0; i2 < 条.length; i2++) {
+        var 号 = String(条[i2].号 || "");
+        if (!号) continue;
+        var 尾 = 号.substring(号.lastIndexOf("/") + 1).toLowerCase();
+        if (要本机 && (尾 === "main" || 尾 === "origin" || 尾 === "primary")) { 要 = 条[i2]; 靠 = "id " + 尾; break; }
+        if (!要本机 && (尾 === "clone" || 尾 === "second" || 尾 === "dual")) { 要 = 条[i2]; 靠 = "id " + 尾; break; }
+    }
+    if (!要) {
+        var 名 = 目标应用名();
+        var 候 = [];
+        for (var j = 0; j < 条.length; j++) {
+            if (!名 || !条[j].文 || 条[j].文.indexOf(名) < 0) continue;
+            /*
+             * ⚠️ 只收**条目**,别把标题收进来。跳转确认框的标题是
+             *    「"小菇爱表白"想要打开"腾讯视频"」—— 它也含应用名,收进来的话
+             *    这个框会被误判成「有两条实例可选」,然后去点标题。
+             *    条目的文字就是应用名本身(顶多加个「Ⅱ·」前缀),不会长出一截。
+             */
+            if (条[j].文.length > 名.length + 8) continue;
+            候.push(条[j]);
+        }
+        if (候.length < 2) {
+            /*
+             * 没有「两条可选的实例」= 这多半**不是分身选择框**,而是另一种拦路框:
+             * vivo 的 com.vivo.appfilter「XX 想要打开 YY」,底下是
+             * 「始终打开 / 仅打开一次 / 取消」。
+             *
+             * ⚠️ 这一支要的是**永久** ——
+             *    按一次「始终打开」以后就不再问,否则一轮被打断几十次。
+             *    授的权只是「本 App 能打开腾讯视频」,正是用户按下「开始表白」要的事。
+             */
+            /*
+             * ⚠️ 未知框传 `保守=true`:不许用「只剩一颗 Button 就点它」那条兜底。
+             *    万一前台是来电、是某个系统授权框,那一下点下去后果不可控。
+             *    认得出「仅一次/始终」那类文字才点,认不出就只留结构给日志。
+             */
+            var 钮 = 找确认钮(条, true, 保守);
+            if (钮) {
+                点过分身框++;
+                var 说一次 = 点过分身框 <= 2;
+                if (说一次) 记("    这是「打开确认」框,替你按「" + (钮.文 || 钮.描) + "」");
+                var 果 = 点掉框里的(钮);
+                if (说一次 || 果.indexOf("还在") >= 0) 记("    结果:" + 果);
+                if (果.indexOf("还在") < 0) { 点掉了次数++; } else { 没点掉次数++; }
+                if (!说过始终提示 && 有始终那颗(条)) {
+                    说过始终提示 = true;
+                    记("    💡 按的是「始终打开」,授权范围只是「本 App 可以打开腾讯视频」,"
+                       + "以后不再问。想撤销:系统设置里找「应用分身 / 跳转管控」那一项");
+                }
+                return 果.indexOf("还在") < 0 ? "点掉" : "没点掉";
+            }
+            没敢点次数++;
+            if (!说过认不出[包]) {
+                说过认不出[包] = true;
+                记("    认不出这个框该点哪(没有 main/clone,也没找到能按的那类按钮)"
+                   + " —— 请自己点一下。上面那份结构就是它,复制日志发给维护者");
+            }
+            return false;
+        }
+        var 短 = 候[0];
+        for (var k = 1; k < 候.length; k++) if (候[k].文.length < 短.文.length) 短 = 候[k];
+        要 = 短; 靠 = "文字最短";
+        if (!要本机) for (var m = 0; m < 候.length; m++) if (候[m] !== 短) { 要 = 候[m]; 靠 = "文字非最短"; break; }
+    }
+    点过分身框++;
+    // ⚠️ 第 2 次之后不再刷日志:一轮十几次的话,日志会被这几行淹掉
+    /*
+     * 条目本身多半没文字(文字在它的子节点上),备一个「里面那个文字节点」——
+     * 有的机型点容器不吃、点文字才吃。
+     */
+    要.文子 = null;
+    if (!要.文) {
+        for (var t = 0; t < 条.length; t++) {
+            if (条[t] === 要 || !条[t].文) continue;
+            if (要.框.contains(条[t].框)) { 要.文子 = 条[t]; break; }
+        }
+    }
+    var 要说 = 点过分身框 <= 2;
+    if (要说) 记("    替你点" + (要本机 ? "本机" : "分身") + "那条(靠 " + 靠
+                + ((要.文 || (要.文子 && 要.文子.文)) ? ",文字「" + (要.文 || 要.文子.文) + "」" : "") + ")");
+    var 结果 = 点掉框里的(要);
+    if (要说 || 结果.indexOf("还在") >= 0) 记("    结果:" + 结果);
+    var 点掉了 = 结果.indexOf("还在") < 0;
+    if (点掉了) 点掉了次数++; else 没点掉次数++;
+    sleep(1200);
+
+    /*
+     * ⚠️ 这类框是**两步**的:点完条目框还在,要再按一次「仅此一次」。
+     *    演练(三星系统选择器)就卡在这一步 —— 少了它等于白点。
+     */
+    if (拦路中(currentPackage())) {
+        var 条2 = 分身框节点(String(currentPackage()));
+        // 同样:没见过的框走保守,不用「只剩一颗 Button」那条兜底
+        var 钮 = 找确认钮(条2, false, 保守);
+        if (钮) {
+            记("    框还在,再按一下「" + (钮.文 || 钮.描) + "」:" + 点掉框里的(钮));
+        } else {
+            记("    框还在,但认不出「仅此一次」那颗 —— 请自己按一下。框里的钮:");
+            for (var n = 0; n < 条2.length; n++)
+                if (条2[n].可 && (条2[n].文 || 条2[n].描))
+                    记("      [" + 条2[n].文 + "/" + 条2[n].描 + "]"
+                       + (条2[n].号 ? " id=" + 条2[n].号 : ""));
+        }
+    }
+    // ⚠️ 这行也要收敛:一轮几十次弹框,不 gate 的话日志里全是它(用户那份就是)
+    if (要说) 记("    点完前台是:" + currentPackage());
+    /*
+     * ⚠️ 结论要看**这一趟全部做完之后**的前台,不能只看第一下点击的返回值 ——
+     *    上面那个「两步框」的分支还会再按一次,第一下没点掉不代表最后没点掉。
+     */
+    return true;        // 真正的结论由外面那层按「前台还挡不挡着」来下
+}
+
 function 去角色页(链, 页面名, 总超时) {
+    var 进来时的框数 = 遇框次数;      // 用来判断「这一路有没有撞上框」,见函数末尾
     try { 开深链(链); } catch (e) { 记("  发深链出错:" + e); return null; }
     var 截止 = Date.now() + 总超时;
     var 重发 = 0, 上次重发 = Date.now();
+    var 说过挡着 = false;
     while (Date.now() < 截止) {
         if (控制.中止) throw 中止信号;
         var f = 页面指纹();
         if (f && f !== 上一个指纹 && 确认是这个角色(页面名)) return f;
-        if (Date.now() - 上次重发 > 2200 && 重发 < 3) {
+        /*
+         * ⚠️ 点掉框之后**把重发计时器往后推**。
+         *    不推的话:框刚点掉 → 2.2 秒到了 → 又发一条深链 → **又弹一次框**,
+         *    自己跟自己打架,一个角色能弹三四次。
+         *    刚点掉的那一下,链接多半已经被送进去了,给它时间落地。
+         */
+        if (过分身框() === "点掉") 上次重发 = Date.now();
+        /*
+         * ── 别的 App 的窗口挡在前面时,**不要重发** ──
+         *
+         * 认得的框(vivo 那两个)我们点得掉,上面那行已经把计时器推后了,走不到这儿。
+         * 走到这儿 = **我们点不动、或者认不出该点哪** —— 也就是没见过的机型。
+         * 这时候重发只是再推一个 Intent,而有些厂商**每个 Intent 都弹一次框** ——
+         * 等于往用户脸上叠框,他还在看上一个。
+         * 而且框被选中之后,**原来那个 Intent 本来就会继续走**,根本不用重发。
+         *
+         * ⚠️ 这条**不影响腾讯自己弹的广告框、开屏广告**:那时前台包还是腾讯,
+         *    拦路中() 第一条(p === 腾讯包 → false)就把它排掉了,重发照常。
+         *    只有**别的 App 的窗口**才会走到这一支。
+         * ⚠️ 被挡这段时间不计入 2.2 秒 —— 框一清就立刻重发的话,又会撞上
+         *    「刚选完、链接正在落地」那一刻,白弹一个框。
+         */
+        if (拦路中(currentPackage())) {
+            上次重发 = Date.now();
+            if (!说过挡着) {
+                说过挡着 = true;
+                记("  有个框挡在前面(" + currentPackage() + "),先不重发深链 —— "
+                   + "有些机型每发一次就弹一次,越推越多。框里有「记住/默认」就勾上,"
+                   + "或到系统设置的「应用分身 / 跳转管控」里关掉询问");
+            }
+        } else if (Date.now() - 上次重发 > 2200 && 重发 < 3) {
             重发++; 上次重发 = Date.now();
-            var 现在 = (currentPackage() === 腾讯包)
+            var 前包 = String(currentPackage() || "?");
+            var 现在 = (前包 === String(腾讯包))
                 ? String(currentActivity() || "?").replace("com.tencent.qqlive.ona.activity.", "")
-                : ("别的App:" + currentPackage());
+                : ("别的App:" + 前包);
             记("  还没到位(" + 现在 + "),重发深链");
             try { 开深链(链); } catch (e) {}
         }
         sleep(250);
+    }
+    /*
+     * 走到这儿 = 这个角色没到位。如果**腾讯就在前台**、这一路**一个框都没撞上**,
+     * 那多半不是页面慢,是**跳转根本没被投递** —— 见 疑似被挡 那段注释。
+     */
+    if (!疑似被挡 && 重发 >= 1 && 遇框次数 === 进来时的框数
+        && String(currentPackage()) === String(腾讯包)) {
+        疑似被挡 = true;
+        记("  ⚠️ 深链发了 " + (重发 + 1) + " 次,腾讯就在前台却一直没跳页,"
+           + "而且一个拦路框都没出现。");
+        记("     这台手机很可能把**后台跳转**挡掉了(小米/红米叫「后台弹出界面」,"
+           + "华为叫「关联启动」,OPPO/一加叫「后台弹窗」)——");
+        记("     被挡的时候系统**什么都不报**,脚本这边只看到「发了没反应」。");
+        记("     回本应用首页,顶上会多一行「跳转可能被系统挡住」,点它去开。");
+        try { 刷新状态(); } catch (e) {}
     }
     return null;
 }
@@ -2257,8 +4035,31 @@ function 签一个内部(角色) {
         return "失败:没到达「" + 页面名 + "」的角色页(当前 " + currentPackage()
              + " / " + currentActivity() + ")";
     }
-    记("  页面指纹:" + 指纹);
+    /*
+     * ⚠️ 给用户看的字眼是「已打开」,不是「页面指纹」——
+     *    「指纹」是我们内部的说法(拿这行数字判断页面到底换没换,见 页面指纹()),
+     *    用户看到只会莫名其妙。他要知道的就两件事:进到这个角色的页了,页面长这样。
+     *    函数名和变量名不动 —— 那是代码,该叫什么就叫什么。
+     */
+    记("  已打开:" + 指纹);
     本次指纹 = 指纹;
+
+    /*
+     * 先核对**实例**,再核对账号。
+     *
+     * ⚠️ 顺序不能反,而且账号那道**不能当实例判据用** —— 同一个账号可以同时登在
+     *    本机和分身,那时两边账号名一样,账号核对全程放行,我们却可能在错的实例上表白。
+     *    任务号跟登的是谁无关:任务按 user 分,两个实例永远是两个 task。
+     * ⚠️ 读不到任务号(Android 14 以下)就静默放行 —— 老机器上退回只靠账号核对,
+     *    比直接判失败强。
+     */
+    if (本轮腾讯任务号 >= 0) {
+        var 现任务 = 前台腾讯任务号();
+        if (现任务 >= 0 && 现任务 !== 本轮腾讯任务号) {
+            return "失败:这一页在另一个腾讯实例上(任务号 " + 现任务 + ",这一轮该在 "
+                 + 本轮腾讯任务号 + ")—— 多半是分身选择框被点到了另一条";
+        }
+    }
 
     // 顺手确认这一页属于哪个账号(切号之后尤其重要)
     /*
@@ -2398,6 +4199,14 @@ function 开切号面板(超时毫秒) {
             try { 开深链(切号面板链); } catch (e) { 记("  开切号面板出错:" + e); }
         }
         if (找可见(text("切换账号")) !== null && 找可见(text("当前登录")) !== null) return true;
+        // 同 去角色页:刚点掉框就别急着重发,不然又弹一次
+        if (过分身框() === "点掉") 上次发 = Date.now();
+        /*
+         * ⚠️⚠️ 切号这条路**也**会撞上厂商的分身选择框 —— 面板本身就是一条深链。
+         *    2026-09-17 vivo 用户的日志:第一个号跑完 7 个角色都成了,切第二个号时
+         *    「✗ 切号超时」,3 个号只跑成 1 个 —— 就是因为这儿没人去点那个框。
+         *    别以为「去角色页里处理过了」就够:每一条发深链之后的等待循环都要过一遍。
+         */
         sleep(300);
     }
     // ⚠️ 超时别直接放弃:多半是腾讯的页面栈坏了(见 唤醒腾讯 那段)。清栈重开再试一轮。
@@ -2476,6 +4285,7 @@ function 稳读账号面板(超时毫秒) {
         var 这次 = 读账号面板一次();
         if (这次.length > 0 && 这次.length === 上次数) return 这次;
         上次数 = 这次.length; 上次 = 这次;
+        过分身框();          // 框盖在面板上时,读到的永远是 0 行
         sleep(300);
     }
     return 上次;
@@ -2648,7 +4458,7 @@ function 跑全部账号(每个号做的事) {
     }
     上次结果 = 总摘要;
     try { if (偏好) 偏好.put("上次结果", 总摘要); } catch (e) {}
-    回本应用();                               // 不管是跑完、中止还是没跑成,都把 App 切回前台
+    收尾前台();                               // 跑完、中止、没跑成,都要收尾(最后一个目标才切回 App)
     发结果通知(没开成 ? "表白没跑成" : (中止了 ? "表白已中止" : "多账号表白完成"), 总摘要);
     toast(总摘要);
 }
@@ -2701,6 +4511,20 @@ function 跑一轮() {
     明细.forEach(function (s) { 记("  " + s); });
     var 摘要 = (配置.干跑 ? "【干跑】待表白 " + 统计.待表白 + " · " : "新表白 " + 统计.刚表白 + " · ")
              + "本来就表白过 " + 统计.已完成 + " · 失败 " + 统计.失败;
+    // ⚠️ 只有真撞上过才报 —— 没有分身的机器上这行是噪音
+    if (遇框次数) {
+        /*
+         * ⚠️ 三个数是三件事,别再混着说:
+         *    点掉了/没点掉 = **我们那一下点击**生没生效(点击层面)
+         *    你自己点掉   = 观测到框后来自己没了、而我们中间没再点(归因层面)
+         *    所以「你自己点掉」永远 ≤「没点掉」。以前只有前两个,末尾硬加一句
+         *    「没点掉的是你自己手点的」—— 那是猜的。
+         */
+        诊("本轮撞上厂商拦路框 " + 遇框次数 + " 次:我们点掉 " + 点掉了次数
+           + " 次,点了没生效 " + 没点掉次数 + " 次,认不出没敢点 " + 没敢点次数 + " 次;"
+           + "其中确认是你自己点掉的 " + 用户点掉次数 + " 次,说不清 " + 说不清次数 + " 次"
+           + (等用户点的框 ? "(还有 1 个框没结清,跑完时它还在)" : ""));
+    }
     if (中止了) 摘要 += " · 未做 " + (配置.角色.length - 做了几个);
     记(摘要);
 
@@ -2713,7 +4537,7 @@ function 跑一轮() {
     if (多账号进行中) { 轮摘要.push(当前账号名 + ":" + 摘要); return; }
     上次结果 = 摘要;
     try { if (偏好) 偏好.put("上次结果", 摘要); } catch (e) {}
-    回本应用();
+    收尾前台();
     发结果通知(中止了 ? "表白已中止" : "表白完成", 摘要);
     toast(摘要);
 }
