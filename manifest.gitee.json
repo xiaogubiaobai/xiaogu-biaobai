@@ -1,16 +1,16 @@
 {
   "脚本": {
-    "版本": "2026.09.16.1",
+    "版本": "2026.09.20.1",
     "地址": "https://raw.giteeusercontent.com/flyten1129/xiaogu-biaobai/raw/master/checkin.js",
-    "sha256": "88c1a8992c3bd6e990bce78ad1c1cdf744f295011184e027731406a163efc519",
-    "说明": "深链组件改成从全部候选里按 uid 挑本尊,并把候选的 uid/user/显示名/dataDir/targetUserId 打进日志(排查分身机型弹选择框)"
+    "sha256": "3f0aa224bdfe0b48262aa1d97604170dd1781b64f076172fddc6b1dc1689a47e",
+    "说明": "日志可发文件给维护者、版本页重做、分身默认两个都跑、拦路框归因与不重发"
   },
   "APK": {
     "最低版本号": 9,
     "最新版本号": 9,
     "最新版本名": "0.1.7",
     "地址": "https://gitee.com/flyten1129/xiaogu-biaobai/releases/download/apk/xiaogu-biaobai.apk",
-    "sha256": "1dcf7d92421ecda40a43e1b1c02ff1975d50ad9c9ef6e0f80712ed053ac4fbad"
+    "sha256": "10488b6e2611c976d4c71cdc93d74c884395a449480f9f90e2b7ca71c631bce7"
   },
-  "更新时间": "2026/09/16 05:29"
+  "更新时间": "2026/09/20 02:36"
 }
