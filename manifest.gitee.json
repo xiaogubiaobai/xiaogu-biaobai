@@ -1,16 +1,16 @@
 {
   "脚本": {
-    "版本": "2026.09.20.1",
+    "版本": "2026.09.20.2",
     "地址": "https://raw.giteeusercontent.com/flyten1129/xiaogu-biaobai/raw/master/checkin.js",
-    "sha256": "3f0aa224bdfe0b48262aa1d97604170dd1781b64f076172fddc6b1dc1689a47e",
-    "说明": "日志可发文件给维护者、版本页重做、分身默认两个都跑、拦路框归因与不重发"
+    "sha256": "c64ce3813949db8c5c29fa6418920a8896b55b7714b0ccf0e9bc2023828518ef",
+    "说明": "0.1.8:内置脚本跟上今天这批;加载器读最低版本号、日志封顶;修掉清单里错的 APK 哈希"
   },
   "APK": {
     "最低版本号": 9,
-    "最新版本号": 9,
-    "最新版本名": "0.1.7",
+    "最新版本号": 10,
+    "最新版本名": "0.1.8",
     "地址": "https://gitee.com/flyten1129/xiaogu-biaobai/releases/download/apk/xiaogu-biaobai.apk",
-    "sha256": "10488b6e2611c976d4c71cdc93d74c884395a449480f9f90e2b7ca71c631bce7"
+    "sha256": "eea210c4c1e431fb7471fc328e2f490812174f006deaa72cefdb34041253a1bb"
   },
-  "更新时间": "2026/09/20 02:36"
+  "更新时间": "2026/09/20 07:20"
 }
