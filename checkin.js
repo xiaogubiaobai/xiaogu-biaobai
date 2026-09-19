@@ -60,7 +60,37 @@ var 配置 = {
  *    我为此白改了好几轮,还有一次跑着旧脚本把当天 7 个角色的表白机会全用光了。
  *    现在启动日志第一行就报这个戳,跟 build.py 打印的对一下就知道装对没有。
  */
-var 构建标记 = "远程 2026.09.20.1";
+var 构建标记 = "远程 2026.09.20.2";
+
+/* ══════════════ 脚本 ↔ 安装包 的版本护栏 ══════════════
+ *
+ * ⚠️ **脚本能远程换,加载器(loader.js)和 manifest 换不了** —— 它们烤在 APK 里。
+ *    所以「今天发的脚本跑在半年前的安装包上」是**常态,不是意外**。
+ *
+ * ⚠️ 危险的不是崩溃 —— 崩了有兜底(活不过 5 秒就拉黑那一版、退回包里那份)。
+ *    真正会咬人的是**不崩但行为错**:脚本读一个老加载器从来不写的偏好键,
+ *    拿到默认值,界面就开始说假话。踩过:「界面显示自动查开着,加载器日志说已关」。
+ *    那种错没有任何报错,只能靠用户觉得不对劲。
+ *
+ * 【纪律】给脚本加任何「依赖加载器 / manifest」的东西时,**二选一**:
+ *   ① 抬高 要求版本号,并在那处用 包太旧 判一下,老包上降级;
+ *   ② 用**能力记号** —— 加载器写一个标记,脚本见到才用(现成例子:有自动查开关)。
+ *   两个都不做就是埋雷。
+ *
+ * ⚠️ 拿 versionCode 当「加载器是哪一代」的代理是成立的:
+ *    loader.js 只可能随 APK 一起出厂,不存在单独更新它这回事。
+ *
+ * ⚠️ 这一层只能**提醒和降级**,挡不住下载 —— 脚本是下完才跑的。
+ *    要从源头挡,得让加载器读清单里的「最低版本号」,而那要随新 APK 才到得了用户手上。
+ */
+var 要求版本号 = 9;        // 这份脚本最低需要的 APK versionCode
+var 本包版本号 = (function () {
+    try {
+        return context.getPackageManager()
+               .getPackageInfo(context.getPackageName(), 0).versionCode | 0;
+    } catch (e) { return 0; }      // 读不到就当够新 —— 别为了一个读不到的数去吓用户
+})();
+var 包太旧 = 本包版本号 > 0 && 本包版本号 < 要求版本号;
 
 /*
  * ── 用哪个腾讯视频 ──
@@ -427,6 +457,48 @@ ui.layout(
         <scroll id="主滚动" h="*">
         {/* scroll 只能有一个直接子 view,所以套一层:上面是脚本列表卡,下面是结果卡 */}
         <vertical>
+        {/*
+          ── 警告横幅 ──
+          ⚠️ 这两条**不能放进「设置」那张卡里**。设置是可以收起来的,一收起整块
+             权限区 setVisibility(GONE),警告就跟着一起消失了 ——
+             而「用户把设置收起来了」恰恰是常态(实测:包太旧那行加进去之后,
+             诊断日志写了、屏幕上什么都没有,查了一轮才发现是被收起来吃掉的)。
+             警告要能被看见才叫警告,所以摆在最上面、独立成卡、不受折叠影响。
+          ⚠️ 两条都 h="auto":标题带 ⚠️、副标题要列三家叫法,写死高度必裁字
+             (行后台弹出 第一版写 h="72",副标题被切掉一半)。
+        */}
+        <vertical id="提示卡" visibility="gone" bg="#fff8e1" margin="14 0 14 0" padding="18 10">
+            <horizontal id="行包太旧" h="auto" gravity="center_vertical" padding="0 10"
+                        visibility="gone">
+                <vertical w="0" layout_weight="1">
+                    <text text="安装包该更新了" textSize="15sp" textColor="#e37400"/>
+                    <text id="包太旧说明" text="" textSize="12sp" textColor="#8a8a8a"/>
+                </vertical>
+                <text text="去更新 ›" textSize="14sp" textColor="#1a73e8" padding="8 0 0 0"/>
+            </horizontal>
+            {/*
+                新安装包已经在后台下好了 —— 这时候用户只剩「按一下系统的安装」。
+                ⚠️ 这一行**只在下好之后**才出现。没下好就提示等于催他去等进度条,
+                   而那正是我们想替他省掉的那一步。
+            */}
+            <horizontal id="行新包就绪" h="auto" gravity="center_vertical" padding="0 10"
+                        visibility="gone">
+                <vertical w="0" layout_weight="1">
+                    <text text="新版安装包已下好" textSize="15sp" textColor="#1e8e3e"/>
+                    <text id="新包就绪说明" text="" textSize="12sp" textColor="#8a8a8a"/>
+                </vertical>
+                <text text="装上 ›" textSize="14sp" textColor="#1a73e8" padding="8 0 0 0"/>
+            </horizontal>
+            <horizontal id="行后台弹出" h="auto" gravity="center_vertical" padding="0 10"
+                        visibility="gone">
+                <vertical w="0" layout_weight="1">
+                    <text text="⚠️ 跳转被系统挡住" textSize="15sp" textColor="#b3261e"/>
+                    <text text="小米「后台弹出界面」· 华为「关联启动」· OPPO「后台弹窗」"
+                          textSize="12sp" textColor="#8a8a8a"/>
+                </vertical>
+                <text text="去开启 ›" textSize="14sp" textColor="#1a73e8" padding="8 0 0 0"/>
+            </horizontal>
+        </vertical>
         {/* 上面这张卡只装「设置」;按钮在下面**另一张卡**里,中间隔一条底色 */}
         <vertical id="设置卡" bg="#ffffff" margin="14 0" padding="18">
 
@@ -517,14 +589,6 @@ ui.layout(
                 */}
                 {/* ⚠️ 这一行**别写死高度**:标题带 ⚠️、副标题要列三家叫法,固定 h 一定裁字
                        (第一版写 h="72",副标题被切掉一半)。用 auto + padding 让它自己长。 */}
-                <horizontal id="行后台弹出" h="auto" gravity="center_vertical" padding="0 10">
-                    <vertical w="0" layout_weight="1">
-                        <text text="⚠️ 跳转被系统挡住" textSize="15sp" textColor="#b3261e"/>
-                        <text text="小米「后台弹出界面」· 华为「关联启动」· OPPO「后台弹窗」"
-                              textSize="12sp" textColor="#8a8a8a"/>
-                    </vertical>
-                    <text text="去开启 ›" textSize="14sp" textColor="#1a73e8" padding="8 0 0 0"/>
-                </horizontal>
                 <horizontal id="行悬浮" h="auto" gravity="center_vertical" padding="0 10">
                     <vertical w="0" layout_weight="1">
                         <text text="悬浮窗" textSize="15sp" textColor="#1f1f1f"/>
@@ -1250,8 +1314,20 @@ function 刷新状态() {
                 + " · 悬浮窗 " + (悬浮 ? "已开" : "未开")
                 + " · 通知 " + (通知 ? (想要通知() ? "开" : "关") : "未开"));
         }
-        // 只有真撞上过才显示,而且跑动时不显示(跑动时整块设置都收起来)
-        ui.行后台弹出.setVisibility((疑似被挡 && !跑着) ? 显 : 隐);
+        // 三条各自判;外壳跟着走 —— 都不显示时整张卡收掉,别留一块空黄底
+        var 要包太旧 = 包太旧 && !跑着;
+        var 要后台弹出 = 疑似被挡 && !跑着;   // 只有真撞上过才显示
+        var 要新包就绪 = 新包下好了() && !跑着;
+        ui.行包太旧.setVisibility(要包太旧 ? 显 : 隐);
+        ui.行后台弹出.setVisibility(要后台弹出 ? 显 : 隐);
+        ui.行新包就绪.setVisibility(要新包就绪 ? 显 : 隐);
+        ui.提示卡.setVisibility((要包太旧 || 要后台弹出 || 要新包就绪) ? 显 : 隐);
+        if (要新包就绪)
+            ui.新包就绪说明.setText(读加载器偏好("远程APK版本名", "?")
+                                   + " 版 · 点一下,按系统的「安装」就完事");
+        if (要包太旧)
+            ui.包太旧说明.setText("这份脚本需要更新的安装包(当前 versionCode "
+                                 + 本包版本号 + ",需要 " + 要求版本号 + ")");
         ui.权限区.setVisibility((跑着 || !实际张开) ? 隐 : 显);
         ui.状态.setVisibility(跑着 ? 显 : 隐);
         写状态(ui.态无障碍, 开了);
@@ -2019,6 +2095,26 @@ ui.行后台弹出.on("click", function () {
     } catch (e) { toast("打不开应用详情页:" + e); }
 });
 
+// 直接送去版本页 —— 装新包的按钮在那儿,不用他自己找
+ui.行包太旧.on("click", function () { 当前页 = "版本"; 画版本页(); 刷新状态(); });
+/*
+ * 已经下好了,这一下直接递给系统装包页。
+ * ⚠️ 首次要先拿「安装未知应用」权限 —— 跟版本页那颗按钮走同一套引导,别写第二份。
+ */
+ui.行新包就绪.on("click", function () {
+    if (!能装包()) {
+        dialogs.build({
+            title: "需要「安装未知应用」权限",
+            content: "下一页请把「小菇爱表白」的开关打开,然后按返回键回来再点一次。"
+                   + String.fromCharCode(10) + String.fromCharCode(10)
+                   + "这个权限只用来安装本应用自己的更新包。",
+            positive: "去开启", negative: "算了"
+        }).on("positive", function () { 去开安装权限(); }).show();
+        return;
+    }
+    拉起安装(新包路径());
+});
+
 ui.行悬浮.on("click", function () { 求悬浮窗(); });
 /*
  * 没拿到系统权限时,整行可点 —— 那时它显示的是「未开启 ›」,跟上面两行同一个语义。
@@ -2280,6 +2376,12 @@ setInterval(刷新状态, 1000);
              + "(" + android.os.Build.BRAND + " / " + android.os.Build.DEVICE + ")";
     } catch (e) {}
     诊("机型:" + 机型);
+    /*
+     * ⚠️ 这一行报障时很关键:一份日志发过来,得先知道「脚本和安装包是不是配套的」。
+     *    不配套的话,后面那些「界面显示 X 但实际 Y」的怪现象往往就是这儿来的。
+     */
+    诊("安装包 versionCode " + 本包版本号 + ",这份脚本要求 ≥ " + 要求版本号
+       + (包太旧 ? "  ⚠️ 安装包太旧,部分功能会降级" : ""));
     诊("环境:Android " + android.os.Build.VERSION.RELEASE
         + " (SDK " + android.os.Build.VERSION.SDK_INT + ")"
         + " · 安装来源 " + 来源
@@ -4541,6 +4643,91 @@ function 跑一轮() {
     发结果通知(中止了 ? "表白已中止" : "表白完成", 摘要);
     toast(摘要);
 }
+
+/* ══════════════ 新安装包:后台先下好 ══════════════
+ *
+ * 【为什么值得做】
+ *   原来的流程是:用户自己想起来点进版本页 → 看到有新版 → 点「下载并安装」→
+ *   盯着进度条等 33 MB → 再按系统的安装。四步,而且第一步他多半永远想不起来。
+ *   现在把前三步挪到后台:下好了才在主界面提示一下,他只剩**按一次系统的安装**。
+ *
+ * ⚠️ 那一下**省不掉**。Android 只给普通 App `REQUEST_INSTALL_PACKAGES`
+ *    (能拉起系统装包页),真正静默安装的 `INSTALL_PACKAGES` 是 signature|privileged,
+ *    只有系统应用拿得到。别的 App「无声息更新好了」要么是应用商店(它自己就是安装器),
+ *    要么是热更新 —— 而热更新正是我们的 checkin.js 在做的事。
+ *
+ * ⚠️ 不限 Wi-Fi。33 MB 而且每次发版才一次,现在的套餐里可以忽略;
+ *    真限了反而有人几乎不连 Wi-Fi,这功能对他等于不存在 —— 静默失效比多花 33 MB 更糟。
+ *    只避开**系统的「省流量模式」**:那不是我们替用户做的判断,是他自己按下过的开关。
+ *
+ * ⚠️ 一个远程版本只自动下一次。失败了不要每次启动都重来 —— 那是每次开 App 白烧 33 MB。
+ *    想重试的人有版本页那颗按钮,那条路不受这个限制。
+ */
+function 新包路径() {
+    try { if (typeof 加载 !== "undefined" && 加载.新包路径) return String(加载.新包路径); }
+    catch (e) {}
+    return files.join(日志目录, "update.apk");      // 跟 loader.js 里算的是同一个位置
+}
+
+/** 清单里那个包比装着的新吗 */
+function 有更新的包() {
+    var 远 = parseInt(读加载器偏好("远程APK版本号", "0"), 10) || 0;
+    return 远 > 0 && 本包版本号 > 0 && 远 > 本包版本号;
+}
+
+/** 下好并且校验过了(「就绪」是加载器校验 sha256 之后才写的),文件也还在 */
+function 新包下好了() {
+    try {
+        if (!有更新的包()) return false;
+        if (读加载器偏好("下载状态", "") !== "就绪") return false;
+        return new java.io.File(新包路径()).exists();
+    } catch (e) { return false; }
+}
+
+/** 系统的「省流量模式」开着,而且没给本应用开绿灯 */
+function 在省流量() {
+    try {
+        var cm = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE);
+        // 3 = RESTRICT_BACKGROUND_STATUS_ENABLED(API 24 起)
+        return cm.getRestrictBackgroundStatus() === 3;
+    } catch (e) { return false; }     // 读不到就当没开,别平白把功能关掉
+}
+
+(function 收拾旧安装包() {
+    /*
+     * ⚠️ 自动预下载带出来的新问题:装完之后那 33 MB 没人删,会一直躺在
+     *    Android/data/<包名>/files/ 里。刚治好 loader_log 无限增长,
+     *    不能转头又留一个死文件。
+     * 判据:已经装上的 versionCode ≥ 清单说的最新 —— 那份下载物已经没用了。
+     */
+    try {
+        var f = new java.io.File(新包路径());
+        if (!f.exists()) return;
+        if (有更新的包()) return;                  // 还有用,留着
+        var 大小 = f.length();
+        if (f["delete"]()) {
+            诊("旧安装包已清掉(" + Math.round(大小 / 1048576) + " MB):" + 新包路径());
+            try { if (typeof 加载 !== "undefined" && 加载.存) 加载.存("下载状态", ""); } catch (e) {}
+        }
+    } catch (e) { 诊("清旧安装包出错:" + e); }
+})();
+
+(function 也许先下新包() {
+    try {
+        if (!有更新的包()) return;
+        if (新包下好了()) return;                                   // 已经下好了
+        if (typeof 加载 === "undefined" || !加载.开后台下载) return;  // 老包没这个能力
+        if (!读自动查()) { 诊("有新安装包,但自动更新关着,不替你先下"); return; }
+        if (在省流量()) { 诊("有新安装包,但系统开着省流量模式,不替你先下"); return; }
+        var 远名 = 读加载器偏好("远程APK版本名", "?");
+        var 下过 = "";
+        try { if (偏好) 下过 = String(偏好.get("预下过的包", "") || ""); } catch (e) {}
+        if (下过 === 远名) { 诊("安装包 " + 远名 + " 这一版已经自动下过一次了,不重下"); return; }
+        try { if (偏好) 偏好.put("预下过的包", 远名); } catch (e) {}
+        诊("发现新安装包 " + 远名 + ",后台先下着(下好了主界面会提示)");
+        加载.开后台下载();
+    } catch (e) { 诊("预下新包出错:" + e); }
+})();
 
 /*
  * ⚠️ 这两句必须放在**文件最末**,不能跟上面的 刷新状态() 挤在一起:
