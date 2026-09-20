@@ -73,12 +73,26 @@ jobs:
             echo "内容没变,跳过"
           else
             git commit -q -m "镜像 ${GITHUB_SHA:0:7}"
-            git push -q origin master
-            echo "已推"
+            # ⚠️ **必须重试。** release.py 一次发布会同时触发 push 和 release 两个 run,
+            #    它们在不同的并发组(见文件头),所以是**并行**跑的 —— 两边同时往
+            #    Gitee 推,后到的必被 `! [rejected] (fetch first)` 顶回来。
+            #    2026-09-20 发 0.1.8 就这么挂的:release 那个 run 死在这儿,
+            #    于是下面「搬 APK」被 skip,Gitee 上还挂着 0.1.7 —— 而清单已经
+            #    写着 0.1.8 的哈希,谁点下载谁校验失败。是拿手工补传救回来的。
+            for t in 1 2 3 4 5; do
+              if git push -q origin master; then echo "已推(第 $t 次)"; break; fi
+              echo "被顶回来了,拉一下再推(第 $t 次)"
+              git pull -q --rebase origin master || git pull -q --no-rebase --no-edit origin master
+              sleep $((t * 3))
+            done
           fi
 
       - name: 搬 APK 到 Gitee Release
-        if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+        # ⚠️ `always() &&` 不能少。搬 APK 跟推文件是**两件独立的事**,
+        #    不该因为前一步失败就整个跳过 —— 2026-09-20 正是这么漏的:
+        #    推文件被并发顶回来 → 这一步 skipped → Gitee 上的包没换,
+        #    而清单已经指向新版哈希,整条下载链当场对不上。
+        if: always() && (github.event_name == 'release' || github.event_name == 'workflow_dispatch')
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -153,7 +167,7 @@ jobs:
             | jq -r '.browser_download_url // .'
 
       - name: 回验固定直链
-        if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+        if: always() && (github.event_name == 'release' || github.event_name == 'workflow_dispatch')
         run: |
           set -euo pipefail
           U="https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/releases/download/${APK_TAG}/${APK_NAME}"
