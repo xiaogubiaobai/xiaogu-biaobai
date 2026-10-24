@@ -1,7 +1,7 @@
 {
   "脚本": {
     "版本": "2026.09.20.2",
-    "地址": "https://raw.giteeusercontent.com/flyten1129/xiaogu-biaobai/raw/master/checkin.js",
+    "地址": "https://gitee.com/flyten1129/xiaogu-biaobai/releases/download/apk/checkin.js",
     "sha256": "c64ce3813949db8c5c29fa6418920a8896b55b7714b0ccf0e9bc2023828518ef",
     "说明": "0.1.8:内置脚本跟上今天这批;加载器读最低版本号、日志封顶;修掉清单里错的 APK 哈希"
   },
