@@ -1,7 +1,7 @@
 {
   "脚本": {
     "版本": "2026.09.19.3",
-    "地址": "https://raw.giteeusercontent.com/flyten1129/xiaogu-biaobai/raw/master/checkin.beta.js",
+    "地址": "https://gitee.com/flyten1129/xiaogu-biaobai/releases/download/beta/checkin.beta.js",
     "sha256": "aa816766dbbc5281b3d1e720f16bdcac4d1f8bd27f7062d6c7974bb2c403e3c1",
     "说明": "beta:跳转被系统挡住时给提示和入口;修大字体下设置行裁字"
   },
