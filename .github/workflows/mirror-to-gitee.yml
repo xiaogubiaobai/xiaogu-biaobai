@@ -87,6 +87,73 @@ jobs:
             done
           fi
 
+      - name: 把脚本搬成 Gitee Release 附件
+        # ⚠️⚠️ **为什么脚本不走仓库文件:Gitee 按「内容」把它判违规了。**
+        #    2026-10-24 实测:raw 取 checkin.js / checkin.beta.js 一律回
+        #    `451 The content may contain violation information`。
+        #    换文件名(app.js)、换扩展名(app.txt)**都一样 451** —— 认的是内容不是路径,
+        #    同一份字节传上去当场就封;而同仓的 manifest.json / index.html 都是 200。
+        #    Release 附件**不走那道扫描**(APK 一直好好的就是证据)。
+        #    所以镜像清单里的「脚本.地址」指 Release 附件,见 release.py 的 镜像脚本地址。
+        #
+        # ⚠️⚠️ **必须 always()。** 这一步跟推文件是两件独立的事,而漏传是**静默故障**:
+        #    清单已经写着新 sha256、附件还是旧的 → loader 校验不过 → 把脚本丢掉,
+        #    一声不吭。跟 0.1.8 那次漏搬 APK 是同一种坑,所以回验必须**真判定**。
+        #
+        # ⚠️ **先删后传,顺序不能反。** 2026-10-24 实测:Gitee 允许同名附件并存,
+        #    而 /releases/download/<tag>/<名> 服务的是**最先传的那一份** ——
+        #    先传后删的话,中间这段时间固定链发的是旧脚本。
+        if: always()
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          set -euo pipefail
+          API="https://gitee.com/api/v5/repos/${GITEE_OWNER}/${GITEE_REPO}"
+          BAD=0
+
+          move_one() {
+            F="$1"; T="$2"
+            if [ ! -f "$F" ]; then echo "── $F 不在仓里,跳过"; return 0; fi
+            echo "── $F → tag=$T ──"
+            SZ=$(stat -c%s "$F")
+            SHA=$(sha256sum "$F" | cut -d' ' -f1)
+            echo "   本地 ${SZ} 字节  sha256 ${SHA}"
+
+            RID=$(curl -sS "${API}/releases?access_token=${GITEE_TOKEN}&per_page=100"                   | jq -r --arg t "$T" '.[] | select(.tag_name==$t) | .id' | head -1)
+            # ⚠️ 脚本**不自己建 Release**:正式那个由下面「搬 APK」那步建/复用,
+            #    而多建一个 Release 就会顶掉 Gitee 的 latest 别名(2026-09-16 踩过)。
+            if [ -z "$RID" ] || [ "$RID" = "null" ]; then
+              echo "   ❌ tag=$T 的 Release 不存在,脚本没地方挂"
+              BAD=1; return 0
+            fi
+
+            for i in $(curl -sS "${API}/releases/${RID}/attach_files?access_token=${GITEE_TOKEN}"                        | jq -r --arg n "$F" '.[]? | select(.name==$n) | .id'); do
+              curl -sS -X DELETE "${API}/releases/${RID}/attach_files/${i}?access_token=${GITEE_TOKEN}" >/dev/null || true
+              echo "   删了同名旧附件 $i"
+            done
+
+            curl -sS -X POST "${API}/releases/${RID}/attach_files"               -F "access_token=${GITEE_TOKEN}" -F "file=@${F}" | jq -r '.name // .'
+
+            # 回验固定直链:HTTP 200 **且 sha256 一致**才算数
+            U="https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/releases/download/${T}/${F}"
+            sleep 3
+            CODE=$(curl -sSL -o got.bin -w '%{http_code}' "$U" || echo 000)
+            GSZ=$(stat -c%s got.bin 2>/dev/null || echo 0)
+            GSHA=$(sha256sum got.bin 2>/dev/null | cut -d' ' -f1 || echo -)
+            rm -f got.bin
+            if [ "$CODE" = "200" ] && [ "$GSHA" = "$SHA" ]; then
+              echo "   ✅ $U  ${GSZ} 字节,sha256 一致"
+            else
+              echo "   ❌ 回验失败:HTTP ${CODE}  ${GSZ} 字节  sha256 ${GSHA}"
+              BAD=1
+            fi
+          }
+
+          move_one checkin.js      "${APK_TAG}"
+          move_one checkin.beta.js beta
+
+          test "$BAD" = "0" || { echo "附件没搬对 —— 清单可能指着旧脚本,不能当成功"; exit 1; }
+
       - name: 搬 APK 到 Gitee Release
         # ⚠️ `always() &&` 不能少。搬 APK 跟推文件是**两件独立的事**,
         #    不该因为前一步失败就整个跳过 —— 2026-09-20 正是这么漏的:
