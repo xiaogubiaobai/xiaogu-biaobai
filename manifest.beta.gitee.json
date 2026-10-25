@@ -3,14 +3,14 @@
     "版本": "2026.10.26.1",
     "地址": "https://gitee.com/flyten1129/xiaogu-biaobai/releases/download/beta/checkin.beta.js",
     "sha256": "867201d69cc101792baabd099d711408fcea05ef699f4ea29da68313bd8d784d",
-    "说明": "荣耀分身框两条同名:文字分不出就按阅读顺序挑(序号对应候选里的实例);点完打任务号便于核对;框日志闸门改成按目标重置"
+    "说明": "beta 包跟上 0.1.8:内置脚本换成最新(含荣耀分身框按位置挑、腾讯弹窗清理),loader 换成 0.1.8 那代"
   },
   "APK": {
     "最低版本号": 9,
-    "最新版本号": 9,
-    "最新版本名": "0.1.7",
+    "最新版本号": 10,
+    "最新版本名": "0.1.8",
     "地址": "https://gitee.com/flyten1129/xiaogu-biaobai/releases/download/beta/xiaogu-biaobai-beta.apk",
-    "sha256": "976a5c8bfdb30bab837b8df080f7fdf02fde26fcdf3f0f3036b5de5210510864"
+    "sha256": "531607abb63aadfc2efd6f6e79388cdca6059751bdb8b53b35cd13e4edc45203"
   },
-  "更新时间": "2026/10/26 00:26"
+  "更新时间": "2026/10/26 07:02"
 }
