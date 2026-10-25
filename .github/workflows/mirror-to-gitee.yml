@@ -103,7 +103,13 @@ jobs:
         # ⚠️ **先删后传,顺序不能反。** 2026-10-24 实测:Gitee 允许同名附件并存,
         #    而 /releases/download/<tag>/<名> 服务的是**最先传的那一份** ——
         #    先传后删的话,中间这段时间固定链发的是旧脚本。
-        if: always()
+        # ⚠️⚠️ **release 事件不跑这一步。** checkin*.js 只会因为 push 而变,
+        #    release 压根不碰它们;而 release 和 push 在**不同的并发组**(见文件头),
+        #    是真并行的 —— 两边都「先删后传」同一个附件,就会互相删掉对方刚传的那份。
+        #    2026-10-26 实测:release 那个 run 删了附件 3493607、传完 3 秒回验拿到 404,
+        #    整个 run 变红 —— 而最终状态其实是对的。**红得没道理比坏更糟**:
+        #    真坏那天就没人当回事了。跟雷②(推文件被并发顶掉)是同一种病。
+        if: always() && github.event_name != 'release'
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         run: |
@@ -134,13 +140,20 @@ jobs:
 
             curl -sS -X POST "${API}/releases/${RID}/attach_files"               -F "access_token=${GITEE_TOKEN}" -F "file=@${F}" | jq -r '.name // .'
 
-            # 回验固定直链:HTTP 200 **且 sha256 一致**才算数
+            # 回验固定直链:HTTP 200 **且 sha256 一致**才算数。
+            # ⚠️ 传完之后那条固定直链要过几秒才解析得到,**3 秒不够**(2026-10-26 实测 404)。
+            #    所以重试 5 次、越等越久;一直拿不到才算失败。
             U="https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/releases/download/${T}/${F}"
-            sleep 3
-            CODE=$(curl -sSL -o got.bin -w '%{http_code}' "$U" || echo 000)
-            GSZ=$(stat -c%s got.bin 2>/dev/null || echo 0)
-            GSHA=$(sha256sum got.bin 2>/dev/null | cut -d' ' -f1 || echo -)
-            rm -f got.bin
+            CODE=000; GSZ=0; GSHA="-"
+            for w in 3 5 8 12 20; do
+              sleep "$w"
+              CODE=$(curl -sSL -o got.bin -w '%{http_code}' "$U" || echo 000)
+              GSZ=$(stat -c%s got.bin 2>/dev/null || echo 0)
+              GSHA=$(sha256sum got.bin 2>/dev/null | cut -d' ' -f1 || echo "-")
+              rm -f got.bin
+              if [ "$CODE" = "200" ] && [ "$GSHA" = "$SHA" ]; then break; fi
+              echo "   (回验没过:HTTP ${CODE} ${GSZ} 字节,再等)"
+            done
             if [ "$CODE" = "200" ] && [ "$GSHA" = "$SHA" ]; then
               echo "   ✅ $U  ${GSZ} 字节,sha256 一致"
             else
