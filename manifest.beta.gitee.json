@@ -1,9 +1,9 @@
 {
   "脚本": {
-    "版本": "2026.10.25.1",
+    "版本": "2026.10.26.1",
     "地址": "https://gitee.com/flyten1129/xiaogu-biaobai/releases/download/beta/checkin.beta.js",
-    "sha256": "3589478f3ed44cdea1006bea5944de3fbd18df44776613f69dd7caf211b04fc7",
-    "说明": "vivo分身:表白成功后清掉腾讯弹窗(它和分身选择框撞一起时深链跳不过去);「还没到位」打出指纹和角色名;失败时dump窗口"
+    "sha256": "867201d69cc101792baabd099d711408fcea05ef699f4ea29da68313bd8d784d",
+    "说明": "荣耀分身框两条同名:文字分不出就按阅读顺序挑(序号对应候选里的实例);点完打任务号便于核对;框日志闸门改成按目标重置"
   },
   "APK": {
     "最低版本号": 9,
@@ -12,5 +12,5 @@
     "地址": "https://gitee.com/flyten1129/xiaogu-biaobai/releases/download/beta/xiaogu-biaobai-beta.apk",
     "sha256": "976a5c8bfdb30bab837b8df080f7fdf02fde26fcdf3f0f3036b5de5210510864"
   },
-  "更新时间": "2026/10/25 21:49"
+  "更新时间": "2026/10/26 00:26"
 }
