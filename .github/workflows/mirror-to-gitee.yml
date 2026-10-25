@@ -179,14 +179,34 @@ jobs:
             echo "手动触发,用最新 Release:$TAG"
           fi
 
+          # ⚠️⚠️ **通道包的 tag 和附件名跟正式不一样,这里必须认出来。**
+          #      正式: tag v0.1.8        附件 xiaogu-biaobai.apk        Gitee tag=apk
+          #      beta: tag v0.1.8-beta   附件 xiaogu-biaobai-beta.apk   Gitee tag=beta
+          #    不认的话,这一步会拿 v0.1.8-beta 去下 xiaogu-biaobai.apk → 404 →
+          #    `test SIZE -gt 1000000` 当场 exit 1,整个 run 变红,而通道包永远到不了 Gitee。
+          #    (2026-10-26 补;同一天 release.py 的 发APK() 才改成 tag/附件名带通道。)
+          # ⚠️ 手动触发那条走 `releases/latest`,而 GitHub 的 latest **跳过预发布**,
+          #    通道包一律是预发布 —— 所以手动触发永远只搬正式包,这是对的,别「修」。
+          CH=""
+          case "$TAG" in *-*) CH="${TAG##*-}";; esac
+          if [ -n "$CH" ]; then
+            NAME="xiaogu-biaobai-${CH}.apk"; DEST_TAG="$CH"
+            echo "通道包 $TAG → 附件 ${NAME} · Gitee tag=${DEST_TAG}"
+          else
+            NAME="${APK_NAME}"; DEST_TAG="${APK_TAG}"
+            echo "正式包 $TAG → 附件 ${NAME} · Gitee tag=${DEST_TAG}"
+          fi
+          # 传给「回验」那步 —— 它是独立 step,读不到这里的局部变量
+          { echo "NAME=${NAME}"; echo "DEST_TAG=${DEST_TAG}"; } >> "$GITHUB_ENV"
+
           # ⚠️ 必须下成**最终文件名**:Gitee 用上传时的文件名给附件命名。
           #    存成 apk.apk 的话 /releases/download/latest/<APK_NAME> 直接 404 ——
           #    而且 0.1.7 那次就这么发出去了,回验步骤还报了成功(见下)。
           echo "── 从 GitHub Release 取已签名的 APK ──"
-          curl -sSL --retry 3 -o "${APK_NAME}" \
-            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${APK_NAME}"
-          SIZE=$(stat -c%s "${APK_NAME}")
-          echo "大小 ${SIZE}  sha256 $(sha256sum "${APK_NAME}" | cut -c1-16)…"
+          curl -sSL --retry 3 -o "${NAME}" \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${NAME}"
+          SIZE=$(stat -c%s "${NAME}")
+          echo "大小 ${SIZE}  sha256 $(sha256sum "${NAME}" | cut -c1-16)…"
           # 下歪了(拿到 404 页面)就别往上传
           test "$SIZE" -gt 1000000 || { echo "下下来的东西太小,八成不是 APK"; exit 1; }
 
@@ -194,16 +214,16 @@ jobs:
           #    每发一版就换掉里面的附件、改一下标题 —— 下载链因此永不变。
           #    别再按 ${TAG}(v0.1.8 这种)建:那样每版一个 Release,
           #    而下载链只能靠 latest 别名去指「最新那个」,一发别的东西就被顶掉(踩过)。
-          echo "── 找/建固定 tag(${APK_TAG})的 Gitee Release ──"
+          echo "── 找/建固定 tag(${DEST_TAG})的 Gitee Release ──"
           RID=$(curl -sS "${API}/releases?access_token=${GITEE_TOKEN}&per_page=100" \
-                | jq -r --arg t "$APK_TAG" '.[] | select(.tag_name==$t) | .id' | head -1)
+                | jq -r --arg t "$DEST_TAG" '.[] | select(.tag_name==$t) | .id' | head -1)
           if [ -z "$RID" ]; then
             # ⚠️ 必须显式声明 charset=utf-8。不声明的话 Gitee 会按别的编码解,
             #    中文标题直接变乱码 —— 踩过。
             RID=$(curl -sS -X POST "${API}/releases" \
               -H "Content-Type: application/x-www-form-urlencoded; charset=utf-8" \
               --data-urlencode "access_token=${GITEE_TOKEN}" \
-              --data-urlencode "tag_name=${APK_TAG}" \
+              --data-urlencode "tag_name=${DEST_TAG}" \
               --data-urlencode "name=${RELNAME}" \
               --data-urlencode "body=${RELBODY}" \
               --data-urlencode "target_commitish=master" | jq -r '.id')
@@ -213,7 +233,7 @@ jobs:
             curl -sS -X PATCH "${API}/releases/${RID}" \
               -H "Content-Type: application/x-www-form-urlencoded; charset=utf-8" \
               --data-urlencode "access_token=${GITEE_TOKEN}" \
-              --data-urlencode "tag_name=${APK_TAG}" \
+              --data-urlencode "tag_name=${DEST_TAG}" \
               --data-urlencode "name=${RELNAME}" \
               --data-urlencode "body=${RELBODY}" >/dev/null || echo "(改标题失败,不致命)"
           fi
@@ -221,7 +241,7 @@ jobs:
 
           echo "── 同名旧附件先删掉,免得一版挂两份 56MB ──"
           for i in $(curl -sS "${API}/releases/${RID}/attach_files?access_token=${GITEE_TOKEN}" \
-                     | jq -r --arg n "$APK_NAME" '.[]? | select(.name==$n) | .id'); do
+                     | jq -r --arg n "$NAME" '.[]? | select(.name==$n) | .id'); do
             curl -sS -X DELETE "${API}/releases/${RID}/attach_files/${i}?access_token=${GITEE_TOKEN}" >/dev/null || true
             echo "删了旧附件 $i"
           done
@@ -230,14 +250,16 @@ jobs:
 
           echo "── 上传 ──"
           curl -sS -X POST "${API}/releases/${RID}/attach_files" \
-            -F "access_token=${GITEE_TOKEN}" -F "file=@${APK_NAME}" \
+            -F "access_token=${GITEE_TOKEN}" -F "file=@${NAME}" \
             | jq -r '.browser_download_url // .'
 
       - name: 回验固定直链
         if: always() && (github.event_name == 'release' || github.event_name == 'workflow_dispatch')
         run: |
           set -euo pipefail
-          U="https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/releases/download/${APK_TAG}/${APK_NAME}"
+          # 上一步把通道算好写进了 GITHUB_ENV;没跑到那儿就退回正式那套
+          DEST_TAG="${DEST_TAG:-$APK_TAG}"; NAME="${NAME:-$APK_NAME}"
+          U="https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/releases/download/${DEST_TAG}/${NAME}"
           # ⚠️ 段序跟 GitHub 相反:GitHub 是 /releases/<tag>/download/<文件名>,
           #    Gitee 是 /releases/download/<tag>/<文件名>。
           # ⚠️ 这里**必须是固定 tag**,不能写 latest —— latest 是「最新那个 Release」的
