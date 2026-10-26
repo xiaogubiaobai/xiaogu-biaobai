@@ -1,9 +1,9 @@
 {
   "脚本": {
-    "版本": "2026.10.26.3",
+    "版本": "2026.10.26.4",
     "地址": "https://raw.githubusercontent.com/xiaogubiaobai/xiaogu-biaobai/main/checkin.beta.js",
-    "sha256": "556ab628756792c3b71a79b3d70624ea209b1890ee081384d846a38831277eac",
-    "说明": "两个修复各自独立入口:界面六颗按钮=对照组(粉)+日历测试(灰)+荣耀分身测试(灰),用一个互斥的 测试模式 控制,日志第一行标档位"
+    "sha256": "7ca3cfe6a1e42454945e6c90498967df2fd38a5f160af8d8c6556dc469fe5960",
+    "说明": "粉色那两颗改成两个修复都开(将来正式版的行为);灰色四颗各自只开一样,用来单独归因"
   },
   "APK": {
     "最低版本号": 9,
@@ -12,7 +12,7 @@
     "地址": "https://github.com/xiaogubiaobai/xiaogu-biaobai/releases/download/v0.1.8-beta/xiaogu-biaobai-beta.apk",
     "sha256": "531607abb63aadfc2efd6f6e79388cdca6059751bdb8b53b35cd13e4edc45203"
   },
-  "更新时间": "2026/10/26 08:01",
+  "更新时间": "2026/10/26 08:03",
   "迁移": {
     "新清单地址": "https://raw.giteeusercontent.com/flyten1129/xiaogu-biaobai/raw/master/manifest.beta.json"
   }
