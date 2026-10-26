@@ -1,9 +1,9 @@
 {
   "脚本": {
-    "版本": "2026.10.26.2",
+    "版本": "2026.10.26.3",
     "地址": "https://gitee.com/flyten1129/xiaogu-biaobai/releases/download/beta/checkin.beta.js",
-    "sha256": "a4d95d5b41f43bd78b18e60f77e192acc55aa76da8342485ffbd9e0832766d34",
-    "说明": "荣耀分身框那条改到单独入口:界面多两颗灰色「(荣耀分身测试)」按钮,按位置挑分身框只在按了它时生效,正常两颗维持原样"
+    "sha256": "556ab628756792c3b71a79b3d70624ea209b1890ee081384d846a38831277eac",
+    "说明": "两个修复各自独立入口:界面六颗按钮=对照组(粉)+日历测试(灰)+荣耀分身测试(灰),用一个互斥的 测试模式 控制,日志第一行标档位"
   },
   "APK": {
     "最低版本号": 9,
@@ -12,5 +12,5 @@
     "地址": "https://gitee.com/flyten1129/xiaogu-biaobai/releases/download/beta/xiaogu-biaobai-beta.apk",
     "sha256": "531607abb63aadfc2efd6f6e79388cdca6059751bdb8b53b35cd13e4edc45203"
   },
-  "更新时间": "2026/10/26 07:44"
+  "更新时间": "2026/10/26 08:01"
 }
