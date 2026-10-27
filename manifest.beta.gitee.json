@@ -1,9 +1,9 @@
 {
   "脚本": {
-    "版本": "2026.10.27.1",
+    "版本": "2026.10.27.2",
     "地址": "https://gitee.com/flyten1129/xiaogu-biaobai/releases/download/beta/checkin.beta.js",
-    "sha256": "a6c4afe2b124b3d9f756fd2abfff5a3b0480f3987ff116decc07be7ede71514f",
-    "说明": "新增「日历·只被动」两颗测试钮:卡住要重发时才 BACK 一次,不每个角色主动清弹窗(省 0.7 秒/角色)"
+    "sha256": "818799a4ef6b34f90d7f0d03ab8dd06672c6dcb61b2a57467e38b33c113a41e7",
+    "说明": "「日历·只被动」改名「候选版」,并补上荣耀分身的位置挑选 —— 这档 = 正式版要发的行为(被动清 + 位置挑选,不主动清)"
   },
   "APK": {
     "最低版本号": 9,
@@ -12,5 +12,5 @@
     "地址": "https://gitee.com/flyten1129/xiaogu-biaobai/releases/download/beta/xiaogu-biaobai-beta.apk",
     "sha256": "531607abb63aadfc2efd6f6e79388cdca6059751bdb8b53b35cd13e4edc45203"
   },
-  "更新时间": "2026/10/27 13:18"
+  "更新时间": "2026/10/27 13:39"
 }
