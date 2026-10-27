@@ -1,9 +1,9 @@
 {
   "脚本": {
-    "版本": "2026.10.26.4",
+    "版本": "2026.10.27.1",
     "地址": "https://raw.githubusercontent.com/xiaogubiaobai/xiaogu-biaobai/main/checkin.beta.js",
-    "sha256": "7ca3cfe6a1e42454945e6c90498967df2fd38a5f160af8d8c6556dc469fe5960",
-    "说明": "粉色那两颗改成两个修复都开(将来正式版的行为);灰色四颗各自只开一样,用来单独归因"
+    "sha256": "a6c4afe2b124b3d9f756fd2abfff5a3b0480f3987ff116decc07be7ede71514f",
+    "说明": "新增「日历·只被动」两颗测试钮:卡住要重发时才 BACK 一次,不每个角色主动清弹窗(省 0.7 秒/角色)"
   },
   "APK": {
     "最低版本号": 9,
@@ -12,7 +12,7 @@
     "地址": "https://github.com/xiaogubiaobai/xiaogu-biaobai/releases/download/v0.1.8-beta/xiaogu-biaobai-beta.apk",
     "sha256": "531607abb63aadfc2efd6f6e79388cdca6059751bdb8b53b35cd13e4edc45203"
   },
-  "更新时间": "2026/10/26 08:03",
+  "更新时间": "2026/10/27 13:18",
   "迁移": {
     "新清单地址": "https://raw.giteeusercontent.com/flyten1129/xiaogu-biaobai/raw/master/manifest.beta.json"
   }
