@@ -1,9 +1,9 @@
 {
   "脚本": {
-    "版本": "2026.10.27.2",
+    "版本": "2026.10.29.1",
     "地址": "https://gitee.com/flyten1129/xiaogu-biaobai/releases/download/beta/checkin.beta.js",
-    "sha256": "818799a4ef6b34f90d7f0d03ab8dd06672c6dcb61b2a57467e38b33c113a41e7",
-    "说明": "「日历·只被动」改名「候选版」,并补上荣耀分身的位置挑选 —— 这档 = 正式版要发的行为(被动清 + 位置挑选,不主动清)"
+    "sha256": "56f9efbb66ccb3a43f6c7507bb8f7cbec6151034c98c8727cd4848d3ecf1cb52",
+    "说明": "验 release.py 的「三文件一个 commit」:内容跟正式 2026.10.28.1 相同"
   },
   "APK": {
     "最低版本号": 9,
@@ -12,5 +12,5 @@
     "地址": "https://gitee.com/flyten1129/xiaogu-biaobai/releases/download/beta/xiaogu-biaobai-beta.apk",
     "sha256": "531607abb63aadfc2efd6f6e79388cdca6059751bdb8b53b35cd13e4edc45203"
   },
-  "更新时间": "2026/10/27 13:39"
+  "更新时间": "2026/10/29 07:03"
 }
