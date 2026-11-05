@@ -1,9 +1,9 @@
 {
   "脚本": {
-    "版本": "2026.11.05.1",
+    "版本": "2026.11.05.2",
     "地址": "https://gitee.com/flyten1129/xiaogu-biaobai/releases/download/beta/checkin.beta.js",
-    "sha256": "df0384d1a2b9f225a9efbea7ba8278e9e0bd37e056cf5e0e2e79e6ff5474b781",
-    "说明": "同名提醒搬到跑完那条通知的第一行(⚠️ 开头);结果卡里把它染成琥珀色"
+    "sha256": "06ba46e02c435a038f40f933d94ee8fd39e3d6810c69869da36bb111d3af746e",
+    "说明": "「检查超时」改成说实话:等 90 秒不再说「网络不通」,并能认出「下载不完整(校验没过)」这种以前完全不出声的失败"
   },
   "APK": {
     "最低版本号": 9,
@@ -12,5 +12,5 @@
     "地址": "https://gitee.com/flyten1129/xiaogu-biaobai/releases/download/beta/xiaogu-biaobai-beta.apk",
     "sha256": "531607abb63aadfc2efd6f6e79388cdca6059751bdb8b53b35cd13e4edc45203"
   },
-  "更新时间": "2026/11/05 13:34"
+  "更新时间": "2026/11/05 14:39"
 }
