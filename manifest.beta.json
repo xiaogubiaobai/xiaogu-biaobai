@@ -1,18 +1,19 @@
 {
   "脚本": {
-    "版本": "2026.11.05.2",
+    "版本": "2026.11.05.3",
     "地址": "https://raw.githubusercontent.com/xiaogubiaobai/xiaogu-biaobai/main/checkin.beta.js",
-    "sha256": "06ba46e02c435a038f40f933d94ee8fd39e3d6810c69869da36bb111d3af746e",
-    "说明": "「检查超时」改成说实话:等 90 秒不再说「网络不通」,并能认出「下载不完整(校验没过)」这种以前完全不出声的失败"
+    "备用地址": "https://gitee.com/flyten1129/xiaogu-biaobai/releases/download/beta/checkin.beta.js",
+    "sha256": "6c88f4ad69eb65d570725542b7d2b4f04743ebdb4c3dac210b765482eb8222fc",
+    "说明": "配 beta APK 0.1.9:加载器下脚本会比长度、残包自动重试、还能换到另一个源,失败也一定在版本页留话(不再只说「检查超时」)"
   },
   "APK": {
     "最低版本号": 9,
-    "最新版本号": 10,
-    "最新版本名": "0.1.8",
-    "地址": "https://github.com/xiaogubiaobai/xiaogu-biaobai/releases/download/v0.1.8-beta/xiaogu-biaobai-beta.apk",
-    "sha256": "531607abb63aadfc2efd6f6e79388cdca6059751bdb8b53b35cd13e4edc45203"
+    "最新版本号": 11,
+    "最新版本名": "0.1.9",
+    "地址": "https://github.com/xiaogubiaobai/xiaogu-biaobai/releases/download/v0.1.9-beta/xiaogu-biaobai-beta.apk",
+    "sha256": "88ce779c4288d5b5210fff3bf5b042c29748620c85a2ef3872a7fdb2db0bdb1c"
   },
-  "更新时间": "2026/11/05 14:39",
+  "更新时间": "2026/11/05 14:49",
   "迁移": {
     "新清单地址": "https://raw.giteeusercontent.com/flyten1129/xiaogu-biaobai/raw/master/manifest.beta.json"
   }
