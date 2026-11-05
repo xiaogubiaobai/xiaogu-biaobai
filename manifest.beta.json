@@ -1,9 +1,9 @@
 {
   "脚本": {
-    "版本": "2026.11.04.1",
+    "版本": "2026.11.05.1",
     "地址": "https://raw.githubusercontent.com/xiaogubiaobai/xiaogu-biaobai/main/checkin.beta.js",
-    "sha256": "37962120a1f2b8ef6d295d83eff832bec5fabb591a928a8e6ee68990068b97e3",
-    "说明": "切号改按配额+倒着扫认身份,不再读账号ID;跳转确认框按结构认\n\n· 删 有重名()/读当前UID() —— 「账号信息管理」那页对手机号注册的号没有 ID,\n  必然 null,而 null 被当成合法身份会把名字唯一的号也一起毒死(3 个号只跑成 1 个)。\n  更关键的是挑行:「第一个非当前行」在最近登录排序下永远在前两行来回弹,\n  ID 认得再准也碰不到列表底下那个号。\n· 挑行改成从下往上扫 + 做过[名] 计数:名字唯一、同名 2 个都是零假设,\n  同名 ≥3 才靠位置(押「最近登录优先」,日志里 9 次完美交替证实)。\n· 同名 ≥4 才启用「全是本来就表白过 → 多半重访」兜底,额外尝试封顶 2 次。\n  离线仿真:k=3 在两种排序模型下都精确,装在 3 上只是白担那条已知假阳性的风险。\n· 跳转确认框(荣耀 FNE-AN00 的 com.hihonor.systemmanager):一个节点里两个应用名\n  同时出现 + 可点 button1 + 可点 button2,三条全中才点;顺手勾「今日不再提醒」。\n  不动 保守 那条兜底,先文案后结构 —— vivo 的「始终打开」仍然优先,走不到新判据。\n· 摊平节点() 多读一个 isChecked(),框 dump 里显示「已勾」。\n· 离线验证:挑行 6 场景 × 2 种排序模型、跳转框判据 11 个用例(含腾讯自己的权限框和\n  我们自己的权限框两个必须不点的反例)全过;三个改动过的函数 node --check 过;\n  反斜杠 6→5,没新增(少的那个是删掉的正则)。\n· 这版没过真机(S23 当时没连上、模拟器僵了),按维护者决定直接进 beta。\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+    "sha256": "df0384d1a2b9f225a9efbea7ba8278e9e0bd37e056cf5e0e2e79e6ff5474b781",
+    "说明": "同名提醒搬到跑完那条通知的第一行(⚠️ 开头);结果卡里把它染成琥珀色"
   },
   "APK": {
     "最低版本号": 9,
@@ -12,7 +12,7 @@
     "地址": "https://github.com/xiaogubiaobai/xiaogu-biaobai/releases/download/v0.1.8-beta/xiaogu-biaobai-beta.apk",
     "sha256": "531607abb63aadfc2efd6f6e79388cdca6059751bdb8b53b35cd13e4edc45203"
   },
-  "更新时间": "2026/11/04 16:03",
+  "更新时间": "2026/11/05 13:34",
   "迁移": {
     "新清单地址": "https://raw.giteeusercontent.com/flyten1129/xiaogu-biaobai/raw/master/manifest.beta.json"
   }
