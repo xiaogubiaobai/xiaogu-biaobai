@@ -1,9 +1,10 @@
 {
   "脚本": {
-    "版本": "2026.10.28.1",
+    "版本": "2026.11.07.1",
     "地址": "https://gitee.com/flyten1129/xiaogu-biaobai/releases/download/apk/checkin.js",
-    "sha256": "19ca9d6f72dfd840ccac7f3f52662527cbd09989731e4188b5b60347b8c79e10",
-    "说明": "分身框两条同名时按位置挑(荣耀);深链卡住要重发时先 BACK 一次清掉盖在上面的弹窗(vivo);失败时 dump 窗口、「还没到位」带页面指纹和角色名。顺带:release.py --看 现在也查线上 APK 段"
+    "备用地址": "https://raw.githubusercontent.com/xiaogubiaobai/xiaogu-biaobai/main/checkin.js",
+    "sha256": "c65e33f6867bfd2b4afabe7ef599fef02b777fae0e1441f082ca9d1cfaaad2f9",
+    "说明": "切号更稳;多个号昵称相同会提前提醒;检查更新失败时会说清原因"
   },
   "APK": {
     "最低版本号": 9,
@@ -12,5 +13,5 @@
     "地址": "https://gitee.com/flyten1129/xiaogu-biaobai/releases/download/apk/xiaogu-biaobai.apk",
     "sha256": "eea210c4c1e431fb7471fc328e2f490812174f006deaa72cefdb34041253a1bb"
   },
-  "更新时间": "2026/10/28 20:15"
+  "更新时间": "2026/11/07 10:50"
 }
